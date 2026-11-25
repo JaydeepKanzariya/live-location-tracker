@@ -2,7 +2,7 @@
 
 ## Current Phase
 **Phase 0 (Foundations): DONE 2026-11-26.** Reviewed, review fixes applied, CI green on GitHub (run 45692142195, commit `6787cb6`): lint, typecheck, build, unit tests, prototype tests, and the infrastructure smoke test.
-**Next: Phase 1 (Auth + gateway)**, waiting for the owner's go-ahead.
+**Phase 1 (Auth + gateway): STARTED 2026-11-26** on branch `phase-1/auth-gateway`, tracked in a draft pull request into `main`. CI runs on every push to the PR. Merge only after the Phase 1 review.
 
 ---
 
