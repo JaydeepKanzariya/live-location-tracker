@@ -8,7 +8,7 @@ The current JS prototype **stays untouched and working** the whole time. It is t
 
 | Week | Dates | Goal | Deliverables | Exit criteria |
 |---|---|---|---|---|
-| **0** ✅ code done 2026-11-26 (infra smoke test: first CI run pending) | Nov 25–27 | Foundations | npm workspaces + Turborepo skeleton, `packages/contracts|config|kafka|observability`, Compose v2 (Kafka 4, Redis, Timescale+PostGIS, Keycloak), CI (lint/typecheck/unit) | build, typecheck, lint, unit tests pass; CI green including the infrastructure smoke test |
+| **0** ✅ done 2026-11-26 (CI green incl. infra smoke test) | Nov 25–27 | Foundations | npm workspaces + Turborepo skeleton, `packages/contracts|config|kafka|observability`, Compose v2 (Kafka 4, Redis, Timescale+PostGIS, Keycloak), CI (lint/typecheck/unit) | build, typecheck, lint, unit tests pass; CI green including the infrastructure smoke test |
 | **1** | Nov 28–Dec 4 | Auth + gateway | Fastify BFF OIDC (PKCE, Redis sessions, `__Host-` cookie, logout), Socket.IO auth + Origin check, Zod validation, Redis dedupe + token bucket, idempotent producer, broadcaster consumer | Integration tests 1, 2, 5, 6, 9 pass; alice and bob see each other with the vanilla prototype UI pointed at the new gateway |
 | **2** | Dec 5–11 | Pipelines | history-writer (batch, downsample, Timescale, pause/resume, DLQ), presence-projector (Redis GEO, stale events), `presence-events` topic, history API | Tests 3, 4, 7, 8, 10 pass; Kafka UI shows 3+ groups with lag ≈ 0 |
 | **3** | Dec 12–18 | Frontend v1 | React + Vite + react-leaflet, Zustand presence, imperative marker layer, all UX states, history layer, diagnostics panel | Playwright two-user E2E green; **parity with the prototype → tag `v0-prototype`** |

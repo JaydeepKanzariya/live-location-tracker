@@ -1,6 +1,6 @@
 # Live Location Tracker: Engineering Plan
 
-> Status: **Approved, v1 in progress (Phase 0 code done 2026-11-26; infra smoke test pending its first CI run)** · Plan date: 2026-11-25 · Submission deadline: 2026-12-31
+> Status: **Approved, v1 in progress (Phase 0 done 2026-11-26, CI green)** · Plan date: 2026-11-25 · Submission deadline: 2026-12-31
 > The current JavaScript prototype in this repo stays as-is. It becomes the reference implementation (`v0-prototype`) while v1 is built next to it (see [12-roadmap.md](12-roadmap.md)).
 
 ## 1. What we are building

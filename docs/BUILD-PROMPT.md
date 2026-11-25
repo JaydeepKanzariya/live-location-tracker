@@ -52,7 +52,7 @@ TypeScript (strict) on Node 22 · npm workspaces + Turborepo (changed from pnpm;
 At the end of each phase: run the checks listed, update `docs/STATUS.md`, and post a short report (what was built, what was verified and how, what is not done, any plan deviations). **Do not start the next phase until the owner says so.**
 
 **Phase 0: Foundations.** Monorepo skeleton (`apps/*`, `packages/*`), `packages/contracts|config|kafka|observability`, Docker Compose v2 (Kafka, Kafka UI, Keycloak with realm import, Redis, Timescale+PostGIS), CI (lint, typecheck, unit).
-*Check:* `npm install`, `npm run v1:build`, `npm run v1:test` pass from a clean clone; `npm run v1:infra:up` + `npm run v1:infra:smoke` pass (also runs in CI). **Status: code done 2026-11-26 with review fixes; infra smoke test pending its first CI run.**
+*Check:* `npm install`, `npm run v1:build`, `npm run v1:test` pass from a clean clone; `npm run v1:infra:up` + `npm run v1:infra:smoke` pass (also runs in CI). **Status: done 2026-11-26 with review fixes; CI green including the infra smoke test.**
 
 **Phase 1: Auth and gateway.** Fastify BFF OIDC (PKCE, Redis sessions, logout), Socket.IO handshake auth with Origin check, Zod validation, Redis dedupe and token bucket, idempotent producer, broadcaster consumer.
 *Check:* integration tests (Testcontainers) for: unauthenticated socket rejected, spoofed `userId` ignored, duplicate `eventId` produces one Kafka record, rate limit, invalid payloads, session expiry. A real login through Keycloak works in a browser.

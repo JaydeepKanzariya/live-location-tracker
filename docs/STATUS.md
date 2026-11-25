@@ -1,8 +1,8 @@
 # Live Location Tracker v1 — Status
 
 ## Current Phase
-**Phase 0 (Foundations): Reviewed 2026-11-26, review fixes applied** — code and tests verified locally.
-Live infrastructure is still unverified: no Docker on this machine. The new CI job `infra-smoke` proves it on GitHub once the repo is pushed (or run `npm run v1:infra:up` then `npm run v1:infra:smoke` with Docker installed).
+**Phase 0 (Foundations): DONE 2026-11-26.** Reviewed, review fixes applied, CI green on GitHub (run 45692142195, commit `6787cb6`): lint, typecheck, build, unit tests, prototype tests, and the infrastructure smoke test.
+**Next: Phase 1 (Auth + gateway)**, waiting for the owner's go-ahead.
 
 ---
 
@@ -58,17 +58,20 @@ Also: Zod 4 `.merge()` replaced with `.extend(KafkaEnvSchema.shape)`; added `inf
 ---
 
 ## Not Done
-- **Phase 0 live infra check:** not yet confirmed. Docker is not installed on the owner's machine, so the check runs as the `infra-smoke` job in GitHub Actions. Its first run started after the push on 2026-11-26; record the result here.
+- **Phase 0 live infra check:** ✅ passed in GitHub Actions (run 45692142195). Docker is still not installed on the owner's machine, so local runs of the stack are not possible; CI covers it on every push.
+  - First CI run failed: a missing space in `kafka-init` created a topic named `location-updates--partitions` instead of `location-updates` (typo introduced during the review fixes). Fixed in `6787cb6`; the smoke test caught it as intended.
 - **Git repository:** done. Initialized on `main`, pushed to https://github.com/JaydeepKanzariya/live-location-tracker (commit `3516da0`). Repo-local git identity; hooks disabled for this repo only.
 - **Phases 1–5:** Auth + gateway (Phase 1), Pipelines (Phase 2), Frontend (Phase 3), Production-grade observability/deploy/load test (Phase 4), Final README + demo script (Phase 5).
 
 ---
 
 ## Known Issues / Honest Flags
-1. **Docker not installed locally:** the Compose stack has not run on this machine. It is exercised by the `infra-smoke` CI job instead (result pending).
+1. **Docker not installed locally:** the Compose stack has not run on this machine. It is proven by the `infra-smoke` CI job (passing). Phase 1 integration tests (Testcontainers) will also need Docker: run them in CI, or install Docker Desktop.
 2. **npm 11 `allowScripts` warning:** During `npm install`, npm 11 warned that install scripts for `@confluentinc/kafka-javascript@1.11.0` and `esbuild` were not yet covered by `allowScripts`. While `import('@confluentinc/kafka-javascript')` succeeded in Node 24, we should verify connecting to a real Kafka broker once Docker is installed (and run `npm install-scripts approve @confluentinc/kafka-javascript` if native bindings complain, or switch `KAFKA_DRIVER=kafkajs`).
 3. **ESLint 9 deprecation notice:** npm warned that `eslint@9.x` has been superseded by ESLint 10; ESLint 9 is working cleanly with `typescript-eslint@8` right now.
 4. **Prototype tests:** all 14 pass locally, including `test/gateway.integration.test.js` (re-run during review on 2026-11-26).
+5. **Vite env files:** Vite reads `.env` from `apps/web`, not the repo root, so `VITE_ENABLE_SIMULATOR` in the root `.env.example` is not seen yet. Set `envDir` in `apps/web/vite.config.ts` in Phase 3.
+6. **CI actions:** bumped `actions/checkout` and `actions/setup-node` to `v7` to clear the Node 20 deprecation warning.
 
 ---
 

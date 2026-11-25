@@ -359,7 +359,7 @@ v1 rebuilds the same system as a TypeScript monorepo with production-grade piece
 
 | Phase | Scope | State |
 |---|---|---|
-| 0 · Foundations | workspace, shared packages, Compose infra, CI | **Done** (reviewed; infra smoke test runs in CI on every push) |
+| 0 · Foundations | workspace, shared packages, Compose infra, CI | **Done** (reviewed; CI green, including the infrastructure smoke test) |
 | 1 · Auth + gateway | OIDC BFF, Socket.IO auth, validation, dedupe, rate limit, producer, broadcaster | Next |
 | 2 · Pipelines | history-writer, presence-projector, DLQ, history API | Planned |
 | 3 · Frontend | React + Vite + Leaflet, the "Signal" design | Planned |
