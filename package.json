@@ -1,0 +1,52 @@
+{
+  "name": "live-location-tracker",
+  "version": "1.0.0",
+  "description": "Real-time live location tracker: OIDC auth + Socket.IO + Kafka + Leaflet + Postgres history processor",
+  "type": "module",
+  "private": true,
+  "packageManager": "npm@11.19.1",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "engines": {
+    "node": ">=22.9"
+  },
+  "scripts": {
+    "start": "node --env-file-if-exists=.env src/server.js",
+    "dev": "node --watch --env-file-if-exists=.env src/server.js",
+    "processor": "node --env-file-if-exists=.env src/processors/db-processor.js",
+    "simulate": "node --env-file-if-exists=.env scripts/simulate-riders.js",
+    "infra:up": "docker compose up -d",
+    "infra:down": "docker compose down",
+    "test": "node --test \"test/**/*.test.js\"",
+    "v1:build": "turbo run build",
+    "v1:typecheck": "turbo run typecheck",
+    "v1:lint": "eslint .",
+    "v1:test": "turbo run test",
+    "v1:dev": "turbo run dev",
+    "v1:format:check": "prettier --check .",
+    "v1:infra:up": "docker compose -f infra/compose/docker-compose.yml up -d",
+    "v1:infra:down": "docker compose -f infra/compose/docker-compose.yml down",
+    "v1:infra:smoke": "bash infra/compose/smoke-test.sh"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "express-session": "^1.18.1",
+    "kafkajs": "^2.2.4",
+    "openid-client": "^6.6.0",
+    "pg": "^8.16.0",
+    "socket.io": "^4.8.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.25.0",
+    "eslint": "^9.25.0",
+    "prettier": "^3.5.0",
+    "socket.io-client": "^4.8.1",
+    "tsx": "^4.19.0",
+    "turbo": "^2.5.0",
+    "typescript": "^5.8.0",
+    "typescript-eslint": "^8.30.0",
+    "vitest": "^3.1.0"
+  }
+}

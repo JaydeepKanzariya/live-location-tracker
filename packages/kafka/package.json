@@ -1,0 +1,25 @@
+{
+  "name": "@llt/kafka",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@confluentinc/kafka-javascript": "^1.11.0",
+    "@llt/contracts": "*",
+    "@llt/observability": "*",
+    "kafkajs": "^2.2.4"
+  }
+}

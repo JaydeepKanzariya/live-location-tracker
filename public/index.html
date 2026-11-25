@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Live Location Tracker</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" crossorigin="" />
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <!-- Shown when /api/me returns 401 -->
+  <main id="login-view" class="login" hidden>
+    <div class="login__card">
+      <div class="login__logo" aria-hidden="true">◎</div>
+      <h1>Live Location Tracker</h1>
+      <p>Share your live position and watch other signed-in users move on the map in real time.</p>
+      <p id="login-error" class="login__error" hidden></p>
+      <a class="btn btn--primary btn--block" href="/auth/login">Sign in with OpenID Connect</a>
+      <p class="login__hint">Local Keycloak test users: <code>alice / alice</code> and <code>bob / bob</code></p>
+    </div>
+  </main>
+
+  <!-- Shown after login -->
+  <div id="app-view" class="app" hidden>
+    <aside class="panel" id="panel">
+      <header class="panel__header">
+        <div class="brand">◎ Live Tracker</div>
+        <span id="conn-status" class="pill pill--warn">Connecting…</span>
+      </header>
+
+      <section class="card user-card">
+        <div id="me-avatar" class="avatar"></div>
+        <div class="user-card__text">
+          <strong id="me-name"></strong>
+          <small id="me-email"></small>
+        </div>
+        <a class="btn btn--ghost btn--sm" href="/auth/logout">Log out</a>
+      </section>
+
+      <section class="card">
+        <h2>Share my location</h2>
+        <p id="permission-status" class="muted">Location permission: checking…</p>
+        <div class="row">
+          <button id="share-btn" class="btn btn--primary">Start sharing</button>
+          <label class="field">
+            Every
+            <select id="interval-select">
+              <option value="2000">2 s</option>
+              <option value="3000" selected>3 s</option>
+              <option value="5000">5 s</option>
+              <option value="10000">10 s</option>
+            </select>
+          </label>
+        </div>
+        <label class="check">
+          <input type="checkbox" id="simulate-toggle" />
+          Simulate walking (for demos without moving)
+        </label>
+        <dl class="stats">
+          <div><dt>Sent</dt><dd id="stat-sent">0</dd></div>
+          <div><dt>Acked</dt><dd id="stat-acked">0</dd></div>
+          <div><dt>Dupes</dt><dd id="stat-dupes">0</dd></div>
+          <div><dt>Rejected</dt><dd id="stat-rejected">0</dd></div>
+        </dl>
+        <p class="muted small">Last Kafka write: <span id="stat-kafka">–</span></p>
+        <button id="history-btn" class="btn btn--ghost btn--sm">Show my stored history</button>
+      </section>
+
+      <section class="card card--grow">
+        <h2>On the map <span id="user-count" class="count">0</span></h2>
+        <ul id="user-list" class="user-list"></ul>
+      </section>
+
+      <section class="card">
+        <h2>Event log</h2>
+        <ol id="event-log" class="event-log"></ol>
+      </section>
+    </aside>
+
+    <button id="panel-toggle" class="panel-toggle" aria-label="Toggle panel">☰</button>
+    <div id="map" class="map"></div>
+  </div>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" crossorigin=""></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script type="module" src="/app.js"></script>
+</body>
+</html>
