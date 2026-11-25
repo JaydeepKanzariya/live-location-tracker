@@ -9,8 +9,9 @@ Each decision below is written as a short ADR: **choice → why → rejected alt
 - **Rejected:** *Go* (better raw CPU/memory per connection, but you lose the shared types and Socket.IO's reference server is Node); *Elixir/Phoenix* (excellent for presence, but adds a second ecosystem and the rubric expects Socket.IO); plain JS (the current prototype; fine for a prototype, risky as it grows).
 - **Revisit when:** a single gateway pod needs > 100k connections and CPU profiles show JSON/socket overhead dominating. Then consider a Go gateway that speaks the Socket.IO protocol or uses raw WebSockets.
 
-## ADR-02 · Monorepo: pnpm workspaces + Turborepo
-- **Why:** apps (`web`, `gateway`, `history-writer`, `simulator`) and packages (`contracts`, `config`, `observability`) version together. Turborepo caches builds and tests, and pnpm is fast and strict about phantom dependencies.
+## ADR-02 · Monorepo: npm workspaces + Turborepo
+- **Decision changed 2026-11-25:** the plan first chose pnpm; v1 uses **npm workspaces** (npm 11) instead. Reasons: the owner asked for npm, the prototype already has an npm lockfile, and native add-ons such as the Confluent Kafka client install more predictably with npm on Windows. pnpm's stricter dependency isolation is the trade-off we give up.
+- **Why a monorepo:** apps (`web`, `gateway`, `history-writer`, `presence-projector`, `simulator`) and packages (`contracts`, `config`, `kafka`, `observability`) version together. Turborepo caches builds and tests.
 - **Rejected:** Nx (more powerful but heavier than this project needs); polyrepo (contract changes would need coordinated releases).
 
 ## ADR-03 · Frontend: React 19 + Vite SPA, Leaflet via react-leaflet
@@ -31,7 +32,7 @@ Each decision below is written as a short ADR: **choice → why → rejected alt
 - **Rejected:** KafkaJS (the prototype uses it; pure JS and easy to start with, but no release since 2023 and effectively unmaintained); node-rdkafka (older API, superseded by the Confluent client).
 - **Risk:** native binary. Prebuilt binaries exist for Linux, macOS and Windows x64. If one fails on a dev machine, KafkaJS stays as a fallback behind a small `EventBus` interface.
 
-## ADR-07 · Event contracts: Zod schemas + versioned JSON envelope
+## ADR-07 · Event contracts: Zod 4 schemas + versioned JSON envelope
 - **Why:** human-readable in Kafka UI (good for the demo and for debugging), with one schema package shared by every producer and consumer, runtime validation at every boundary, and generated TS types. The envelope carries `schemaVersion`, `type`, `eventId`, `occurredAt` and `traceparent`.
 - **Rejected for now:** Protobuf/Avro + Schema Registry (smaller payloads and enforced compatibility rules; the right call at ~33k events/s across many teams, but too much ceremony for one team and one deadline). The envelope is designed so we can switch encodings without changing topic semantics.
 
@@ -58,7 +59,7 @@ Each decision below is written as a short ADR: **choice → why → rejected alt
 - See [11-testing-strategy.md](11-testing-strategy.md). Playwright can **grant geolocation permission and set coordinates**, so the full permission-to-marker flow can be tested end to end in CI.
 
 ## ADR-13 · Runtime & deployment
-- **Local:** Docker Compose (Kafka, Kafka UI, Keycloak, Redis, Timescale, Grafana stack).
+- **Local:** Docker Compose (Kafka 4.1, Kafka UI from the maintained Kafbat fork pinned to v1.4.2, Keycloak, Redis, TimescaleDB + PostGIS; Grafana stack in Phase 4). The original `provectuslabs/kafka-ui` project is archived.
 - **Demo/production (pragmatic):** one VM (Hetzner, DigitalOcean or AWS Lightsail) running Compose behind **Caddy** with automatic HTTPS. This is the cheapest way to host Kafka plus everything else under a real URL.
 - **Production (target design):** Kubernetes with **Strimzi** for Kafka (or Confluent Cloud/MSK), HPA on gateway connections, PodDisruptionBudgets. Documented and templated; not required for submission.
 - **CI/CD:** GitHub Actions → GHCR images → deploy over SSH (VM) or Argo CD (Kubernetes).

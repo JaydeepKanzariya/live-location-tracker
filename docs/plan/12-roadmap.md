@@ -8,7 +8,7 @@ The current JS prototype **stays untouched and working** the whole time. It is t
 
 | Week | Dates | Goal | Deliverables | Exit criteria |
 |---|---|---|---|---|
-| **0** | Nov 25–27 | Foundations | pnpm + Turborepo skeleton, `packages/contracts|config|kafka|observability`, Compose v2 (Kafka 4, Redis, Timescale+PostGIS, Keycloak), CI (lint/typecheck/unit) | `pnpm dev` boots empty apps; CI green |
+| **0** ✅ code done 2026-11-26 (infra smoke test: first CI run pending) | Nov 25–27 | Foundations | npm workspaces + Turborepo skeleton, `packages/contracts|config|kafka|observability`, Compose v2 (Kafka 4, Redis, Timescale+PostGIS, Keycloak), CI (lint/typecheck/unit) | build, typecheck, lint, unit tests pass; CI green including the infrastructure smoke test |
 | **1** | Nov 28–Dec 4 | Auth + gateway | Fastify BFF OIDC (PKCE, Redis sessions, `__Host-` cookie, logout), Socket.IO auth + Origin check, Zod validation, Redis dedupe + token bucket, idempotent producer, broadcaster consumer | Integration tests 1, 2, 5, 6, 9 pass; alice and bob see each other with the vanilla prototype UI pointed at the new gateway |
 | **2** | Dec 5–11 | Pipelines | history-writer (batch, downsample, Timescale, pause/resume, DLQ), presence-projector (Redis GEO, stale events), `presence-events` topic, history API | Tests 3, 4, 7, 8, 10 pass; Kafka UI shows 3+ groups with lag ≈ 0 |
 | **3** | Dec 12–18 | Frontend v1 | React + Vite + react-leaflet, Zustand presence, imperative marker layer, all UX states, history layer, diagnostics panel | Playwright two-user E2E green; **parity with the prototype → tag `v0-prototype`** |
@@ -32,7 +32,7 @@ The current JS prototype **stays untouched and working** the whole time. It is t
 2. **Login (1 min):** alice in a normal window, bob in incognito, through the Keycloak screen; show the HttpOnly cookie and that no token is in JS.
 3. **Permission (0.5 min):** prompt → allow; show the denied state + simulate fallback.
 4. **Live movement (1.5 min):** both sharing; markers glide; diagnostics show partition/offset per update.
-5. **Kafka (2 min):** Kafka UI → `location-updates` messages keyed by userId → consumer groups `broadcaster-*`, `history-writer`, `presence-projector`; explain split vs fan-out.
+5. **Kafka (2 min):** Kafka UI → `location-updates` messages keyed by userId → consumer groups `broadcaster-*`, `location-db-writer`, `presence-projector`; explain split vs fan-out.
 6. **Resilience (1.5 min):** stop history-writer → map still live, lag grows → restart → lag drains; send a duplicate → ignored; close bob's tab → marker removed.
 7. **Persistence (1 min):** history layer from Timescale; explain downsampling + batching numbers.
 8. **Trade-offs (1 min):** why Kafka, why not direct DB writes, how it scales (viewport fan-out).

@@ -26,7 +26,7 @@ Also: Zod 4 `.merge()` replaced with `.extend(KafkaEnvSchema.shape)`; added `inf
 
 ---
 
-## Done (Phase 0)
+## Done (Phase 0, as first delivered; see the review fixes above for what changed)
 - **Monorepo workspace:** npm workspaces (`apps/*`, `packages/*`) + Turborepo (`turbo.json`), TypeScript strict base configs (`tsconfig.base.json`, `packages/tsconfig`), ESLint 9 flat config (`eslint.config.mjs`), Prettier (`.prettierrc`), updated `.gitignore`, updated `.env.example`.
 - **Untouched prototype:** Existing `src/`, `public/`, `test/`, `scripts/`, root `docker-compose.yml`, and prototype scripts/dependencies in root `package.json` were preserved intact.
 - **Shared packages (`packages/`):**
@@ -36,13 +36,13 @@ Also: Zod 4 `.merge()` replaced with `.extend(KafkaEnvSchema.shape)`; added `inf
   - `@llt/observability`: `pino` logger redacting raw coordinates (`lat`, `lng`, `position`) and auth secrets at INFO, `hashUserId()`, and OpenTelemetry W3C `traceparent` header injection/extraction helpers.
 - **App skeletons (`apps/`):** minimal buildable/runnable TypeScript shells for `gateway`, `history-writer`, `presence-projector`, `simulator`, and `web` (React 19 + Vite with `/auth`, `/api`, `/socket.io` proxy to `:3000`).
 - **Infrastructure & CI:**
-  - `infra/compose/docker-compose.yml`: Apache Kafka 4.1.0 (KRaft), one-shot topic init (`location-updates`, `presence-events`, `user-last-location` compacted, `location-updates.dlq`), Kafbat Kafka UI (`ghcr.io/kafbat/kafka-ui:latest`), Keycloak 26.0.7 with realm import, Redis 7, TimescaleDB + PostGIS (`timescale/timescaledb-ha:pg17`).
+  - `infra/compose/docker-compose.yml`: Apache Kafka 4.1.0 (KRaft), one-shot topic init (`location-updates`, `presence-events`, `user-last-location` compacted, `location-updates.dlq`), Kafbat Kafka UI (now pinned to `ghcr.io/kafbat/kafka-ui:v1.4.2`), Keycloak 26.0.7 with realm import, Redis 7, TimescaleDB + PostGIS (`timescale/timescaledb-ha:pg17`).
   - `infra/keycloak/tracker-realm.json`: updated backwards-compatibly to allow `http://localhost:5173` alongside `http://localhost:3000`.
-  - `.github/workflows/ci.yml`: lint, typecheck, build, v1 unit tests, and prototype safety-net tests.
+  - `.github/workflows/ci.yml`: lint, typecheck, build, v1 unit tests, prototype safety-net tests, and (added in review) the `infra-smoke` Docker Compose job.
 
 ---
 
-## Verified (with Command Output Summary)
+## Verified at first delivery (superseded by "Verified after fixes" above: 45/45 v1 tests now)
 - `npm install`: exited 0 (added 256 packages, 384 total).
 - `npm run v1:build`: exited 0 — **9/9** packages built (`@llt/contracts`, `@llt/config`, `@llt/kafka`, `@llt/observability`, `@llt/gateway`, `@llt/history-writer`, `@llt/presence-projector`, `@llt/simulator`, `@llt/web` Vite bundle `dist/assets/index-*.js` 96.69 kB gzip).
 - `npm run v1:typecheck`: exited 0 — **13/13** Turborepo tasks passed.
@@ -58,27 +58,28 @@ Also: Zod 4 `.merge()` replaced with `.extend(KafkaEnvSchema.shape)`; added `inf
 ---
 
 ## Not Done
-- **Phase 0 live infra check:** `npm run v1:infra:up`, Kafka UI (`http://localhost:8081`), and Keycloak (`http://localhost:8080`) could **not** be run yet because Docker is not installed on this machine.
-- **Git repository:** `.git` is not initialized yet (awaiting owner confirmation to run `git init`).
+- **Phase 0 live infra check:** not yet confirmed. Docker is not installed on the owner's machine, so the check runs as the `infra-smoke` job in GitHub Actions. Its first run started after the push on 2026-11-26; record the result here.
+- **Git repository:** done. Initialized on `main`, pushed to https://github.com/JaydeepKanzariya/live-location-tracker (commit `3516da0`). Repo-local git identity; hooks disabled for this repo only.
 - **Phases 1–5:** Auth + gateway (Phase 1), Pipelines (Phase 2), Frontend (Phase 3), Production-grade observability/deploy/load test (Phase 4), Final README + demo script (Phase 5).
 
 ---
 
 ## Known Issues / Honest Flags
-1. **Docker not installed:** `infra/compose/docker-compose.yml` has been written and checked carefully, but has not been executed against a real Docker daemon yet.
+1. **Docker not installed locally:** the Compose stack has not run on this machine. It is exercised by the `infra-smoke` CI job instead (result pending).
 2. **npm 11 `allowScripts` warning:** During `npm install`, npm 11 warned that install scripts for `@confluentinc/kafka-javascript@1.11.0` and `esbuild` were not yet covered by `allowScripts`. While `import('@confluentinc/kafka-javascript')` succeeded in Node 24, we should verify connecting to a real Kafka broker once Docker is installed (and run `npm install-scripts approve @confluentinc/kafka-javascript` if native bindings complain, or switch `KAFKA_DRIVER=kafkajs`).
 3. **ESLint 9 deprecation notice:** npm warned that `eslint@9.x` has been superseded by ESLint 10; ESLint 9 is working cleanly with `typescript-eslint@8` right now.
-4. **Prototype integration test in sandbox:** All 12 prototype unit tests pass; `test/gateway.integration.test.js` requires local socket binding (run directly in your terminal with `npm test` to verify).
+4. **Prototype tests:** all 14 pass locally, including `test/gateway.integration.test.js` (re-run during review on 2026-11-26).
 
 ---
 
 ## Decisions That Deviate from the Plan
 | Area | Plan | Implemented | Why |
 |---|---|---|---|
-| Package manager | `pnpm` workspaces (ADR-02) | `npm` workspaces (`npm@11.19.1`) | Owner requested `npm`; avoids lockfile conflict with prototype and gives smoother Windows native-addon resolution |
-| Kafka UI image | `provectuslabs/kafka-ui:v0.7.2` | `ghcr.io/kafbat/kafka-ui:latest` | Provectus repo is archived; Kafbat is the active fork with Kafka 4 KRaft support |
-| Zod version | Zod 3 syntax in plan snippets | Zod 4 (`^4.0.0`, `z.strictObject`, `z.uuid`) | Current stable version; faster runtime + TS compilation |
-| DB writer group ID | `history-writer` in 03/04 docs | `location-db-writer` | Matches `docs/BUILD-PROMPT.md` Non-Negotiable Rule #4 |
+| Package manager | `pnpm` workspaces (ADR-02) | `npm` workspaces (`npm@11.19.1`) | Owner requested `npm`; avoids lockfile conflict with prototype and gives smoother Windows native-addon resolution. **Plan docs updated 2026-11-26** (ADR-02, 00, 06, 10, 12, BUILD-PROMPT) |
+| Kafka UI image | `provectuslabs/kafka-ui:v0.7.2` | `ghcr.io/kafbat/kafka-ui:v1.4.2` | Provectus repo is archived; Kafbat is the active fork with Kafka 4 KRaft support. Pinned in review. Plan doc 02 updated |
+| Zod version | Zod 3 syntax in plan snippets | Zod 4 (`^4.0.0`, `z.strictObject`, `z.uuid`) | Current stable version. Plan doc 04 snippet updated |
+| DB writer group ID | `history-writer` in 03/04 docs | `location-db-writer` | Matches `docs/BUILD-PROMPT.md` Non-Negotiable Rule #4. Plan docs 03, 04, 07, 12 updated; the app is still named `history-writer` |
+| Timings and endpoints | heartbeat 10 s (05); history at `/api/me/history` (06, 07) | heartbeat 15 s; `/api/locations/history` | Frontend Part 2 values adopted everywhere; reconciliation table in 08 marked resolved |
 
 ---
 

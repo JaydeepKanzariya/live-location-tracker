@@ -4,14 +4,36 @@ Real-time location sharing. Signed-in users share their position from the browse
 
 **Kafka is the main path, not an add-on.** Every location update goes browser → Socket.IO → **Kafka** → consumers → browsers. The gateway never sends a location straight back out to other sockets. A marker only moves after its event has been written to Kafka and read back by a consumer.
 
+[![CI](https://github.com/JaydeepKanzariya/live-location-tracker/actions/workflows/ci.yml/badge.svg)](https://github.com/JaydeepKanzariya/live-location-tracker/actions/workflows/ci.yml)
+
 | | |
 |---|---|
+| **Repository** | https://github.com/JaydeepKanzariya/live-location-tracker |
 | **Demo video** | _TODO: paste YouTube unlisted link_ |
 | **Live deployment** | _TODO: paste link (or "local only", see [Deployment](#deployment))_ |
 
 ---
 
+## Project status
+
+This repository holds two versions side by side:
+
+| Version | Where | State | Run it |
+|---|---|---|---|
+| **v0 prototype** (JavaScript) | `src/`, `public/`, `scripts/`, `test/`, root `docker-compose.yml` | **Complete.** Covers every assignment requirement and is the fallback submission. Most of this README describes it. | [Setup](#setup) |
+| **v1** (TypeScript monorepo) | `apps/`, `packages/`, `infra/` | **In progress.** Phase 0 (foundations) is done and reviewed; Phase 1 (auth + gateway) is next. | [v1 development](#v1-development-in-progress) |
+
+- Plan: [`docs/plan/`](docs/plan/00-overview.md) (all of it in one file: [`docs/PLAN-COMPLETE.md`](docs/PLAN-COMPLETE.md))
+- Visual design rules: [`DESIGN.md`](DESIGN.md)
+- Current progress, verification results and known issues: [`docs/STATUS.md`](docs/STATUS.md)
+- Build instructions for each phase: [`docs/BUILD-PROMPT.md`](docs/BUILD-PROMPT.md)
+
+When v1 reaches the same features as the prototype, the prototype moves to `legacy/` and this README switches to v1.
+
+---
+
 ## Contents
+- [Project status](#project-status)
 - [Architecture](#architecture)
 - [Tech stack](#tech-stack)
 - [Project structure](#project-structure)
@@ -24,6 +46,7 @@ Real-time location sharing. Signed-in users share their position from the browse
 - [Handling disconnects, invalid data and duplicates](#handling-disconnects-invalid-data-and-duplicates)
 - [Design decisions and trade-offs](#design-decisions-and-trade-offs)
 - [Assumptions and limitations](#assumptions-and-limitations)
+- [v1 development (in progress)](#v1-development-in-progress)
 
 ---
 
@@ -41,7 +64,7 @@ Real-time location sharing. Signed-in users share their position from the browse
  │        ▼                                                                 │
  │   ┌─────────────────── Kafka topic: location-updates (3 partitions) ──┐ │
  │   └───────────┬──────────────────────────────────────────┬───────────┘ │
- │               │ 5. group socket-broadcaster-<instance>   │             │
+ │               │ 5. group broadcaster-<instance>          │             │
  │               ▼                                          │             │
  │   Broadcaster consumer → presence store                  │             │
  │        │ 6. io.emit("location:broadcast")                │             │
@@ -56,12 +79,14 @@ The same topic is read by **two consumer groups**. Each group gets every message
 
 | Consumer group | Process | Purpose | Scaling |
 |---|---|---|---|
-| `socket-broadcaster-<INSTANCE_ID>` | gateway | push live updates to sockets | **unique id per instance** → every gateway instance gets *every* event (fan-out), because each instance holds different sockets |
+| `<KAFKA_BROADCASTER_GROUP>-<INSTANCE_ID>`, e.g. `broadcaster-gateway-1` | gateway | push live updates to sockets | **unique id per instance** → every gateway instance gets *every* event (fan-out), because each instance holds different sockets |
 | `location-db-writer` | db-processor | persist history | **shared id** → Kafka *splits* the 3 partitions across processor instances (work queue) |
 
 The two consumers don't depend on each other. If Postgres is slow or down, the map keeps updating; the DB processor falls behind and catches up later from its last committed offset.
 
 ## Tech stack
+
+This table is the **v0 prototype**. v1 uses TypeScript, Fastify, Kafka 4.1 with the Confluent client, Redis, TimescaleDB + PostGIS and React; see [ADR summary](docs/plan/02-tech-stack.md).
 
 | Layer | Choice |
 |---|---|
@@ -78,8 +103,9 @@ The two consumers don't depend on each other. If Postgres is slow or down, the m
 ## Project structure
 
 ```
+── v0 prototype ─────────────────────────────────────────────────────────────
 ├── docker-compose.yml           Kafka, Kafka UI, Keycloak, Postgres
-├── infra/keycloak/              realm import: client + test users alice/bob
+├── infra/keycloak/              realm import: client + test users alice/bob (shared with v1)
 ├── public/                      frontend (served by the gateway)
 │   ├── index.html               login view + app view
 │   ├── app.js                   wiring: auth check, socket events, sidebar
@@ -95,10 +121,27 @@ The two consumers don't depend on each other. If Postgres is slow or down, the m
 │   ├── realtime/                socket-gateway.js, broadcaster.js (consumer #1), presence.js
 │   ├── processors/              db-processor.js (consumer #2), write-planner.js, sinks.js
 │   └── db/                      schema.sql, pool.js, history-repo.js
-└── test/                        unit + integration tests
+├── test/                        unit + integration tests
+│
+── v1 (in progress) ─────────────────────────────────────────────────────────
+├── apps/                        gateway, history-writer, presence-projector, simulator, web (Phase 0 shells)
+├── packages/
+│   ├── contracts/               Zod schemas for Kafka events + Socket.IO payloads (single source of truth)
+│   ├── config/                  typed env loading with production guards
+│   ├── kafka/                   EventBus over @confluentinc/kafka-javascript (KafkaJS fallback), in-memory bus for tests
+│   ├── observability/           pino logger with coordinate redaction, OpenTelemetry trace headers
+│   └── tsconfig/                shared TypeScript settings
+├── infra/compose/               v1 Docker Compose (Kafka 4, Kafka UI, Keycloak, Redis, TimescaleDB + PostGIS) + smoke-test.sh
+├── .github/workflows/ci.yml     lint, typecheck, build, tests, infrastructure smoke test
+│
+── docs ─────────────────────────────────────────────────────────────────────
+├── DESIGN.md                    visual design rules
+└── docs/                        plan/, PLAN-COMPLETE.md, STATUS.md, BUILD-PROMPT.md
 ```
 
 ## Setup
+
+These steps run the **v0 prototype**. For v1, see [v1 development](#v1-development-in-progress).
 
 **You need:** Node.js ≥ 22.9 and Docker Desktop.
 
@@ -138,7 +181,7 @@ npm test                                          # unit + integration tests (no
 
 ## Environment variables
 
-All variables are in [`.env.example`](.env.example) and are read in one place, [`src/config.js`](src/config.js).
+All variables are in [`.env.example`](.env.example). The prototype reads them in [`src/config.js`](src/config.js); v1 reads them in [`packages/config`](packages/config/src/index.ts). The table below lists the ones the prototype uses. `.env.example` also has v1-only settings (Redis, Kafka driver and extra topics, session encryption key, timing values, OpenTelemetry), each with a comment.
 
 | Variable | Default | Purpose |
 |---|---|---|
@@ -154,7 +197,7 @@ All variables are in [`.env.example`](.env.example) and are read in one place, [
 | `KAFKA_BROKERS` | `localhost:9092` | Comma-separated brokers |
 | `KAFKA_TOPIC` | `location-updates` | Topic name |
 | `KAFKA_TOPIC_PARTITIONS` | `3` | Partitions created on first start |
-| `KAFKA_BROADCASTER_GROUP` | `socket-broadcaster` | Broadcaster group prefix |
+| `KAFKA_BROADCASTER_GROUP` | `broadcaster` in `.env.example` (`socket-broadcaster` if unset) | Broadcaster group prefix; the full id is `<prefix>-<INSTANCE_ID>` |
 | `KAFKA_DB_WRITER_GROUP` | `location-db-writer` | DB processor group |
 | `KAFKA_SSL`, `KAFKA_SASL_*` | off | For managed Kafka (Confluent, Aiven, Redpanda Cloud) |
 | `LOCATION_MIN_INTERVAL_MS` | `1000` | Server-side rate limit per user |
@@ -308,3 +351,39 @@ Kafka is the hard part to host. Options:
 - Background tabs throttle timers, so a backgrounded tab may send less often (the stale logic handles this).
 - OSM public tiles are for low-volume demos only (see their tile usage policy).
 - Tests cover validation, dedupe, presence, write planning and the authenticated socket path, using an in-memory producer. The Kafka, Keycloak and Postgres paths are not covered by automated tests; check them manually with docker-compose.
+- The prototype's `docker-compose.yml` and v1's `infra/compose/docker-compose.yml` use the same ports (9092, 8080, 8081, 5432). Run only one stack at a time (`docker compose down` the other first).
+
+## v1 development (in progress)
+
+v1 rebuilds the same system as a TypeScript monorepo with production-grade pieces: Fastify, Redis-backed sessions and presence, TimescaleDB + PostGIS history, a React + Leaflet frontend, OpenTelemetry and full test levels. The plan is in [`docs/plan/`](docs/plan/00-overview.md) and progress in [`docs/STATUS.md`](docs/STATUS.md).
+
+| Phase | Scope | State |
+|---|---|---|
+| 0 · Foundations | workspace, shared packages, Compose infra, CI | **Done** (reviewed; infra smoke test runs in CI on every push) |
+| 1 · Auth + gateway | OIDC BFF, Socket.IO auth, validation, dedupe, rate limit, producer, broadcaster | Next |
+| 2 · Pipelines | history-writer, presence-projector, DLQ, history API | Planned |
+| 3 · Frontend | React + Vite + Leaflet, the "Signal" design | Planned |
+| 4 · Production-grade | tracing, dashboards, Docker images, HTTPS deploy, load test | Planned |
+| 5 · Ship | final README, demo | Planned |
+
+**Commands** (npm workspaces + Turborepo; Node ≥ 22.9):
+
+```bash
+npm install
+npm run v1:build          # build all packages and apps
+npm run v1:typecheck
+npm run v1:lint
+npm run v1:test           # unit tests (no Docker needed)
+
+npm run v1:infra:up       # Kafka 4, Kafka UI, Keycloak, Redis, TimescaleDB + PostGIS (needs Docker)
+npm run v1:infra:smoke    # checks topics, Keycloak realm, Redis, Postgres extensions, Kafka UI
+npm run v1:infra:down
+```
+
+CI runs all of the above on every push to `main`, including the infrastructure smoke test on GitHub's Docker-enabled runners.
+
+Key v1 rules (from [`docs/BUILD-PROMPT.md`](docs/BUILD-PROMPT.md)):
+- Kafka is the only path to other users' screens.
+- `userId` always comes from the authenticated session.
+- Kafka offsets are committed only after the database transaction commits.
+- The history writer is a separate process in consumer group `location-db-writer`; each gateway uses its own broadcaster group.

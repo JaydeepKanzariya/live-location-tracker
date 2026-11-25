@@ -56,11 +56,11 @@ sequenceDiagram
 - **Headers** via `@fastify/helmet`: HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy `geolocation=(self)`.
 - **CSRF:** SameSite=Lax + all state-changing HTTP is POST with an Origin check (logout is POST in v1).
 - **Secrets:** `.env` locally; in production Doppler / 1Password / cloud secret manager. Never committed. `gitleaks` runs in CI.
-- **Dependencies:** Renovate + `pnpm audit` + GitHub Dependabot alerts; container images scanned with Trivy.
+- **Dependencies:** Renovate + `npm audit` + GitHub Dependabot alerts; container images scanned with Trivy.
 - **Transport:** TLS at the edge (Caddy auto-HTTPS). Kafka/Redis/DB use SASL/TLS when outside a private network.
 
 ## Privacy (location data is sensitive personal data)
 - Explicit opt-in: sharing is **off** until the user clicks "Start sharing". A clear indicator shows while active.
 - Data minimisation: store downsampled history only; drop heading and speed from history if not needed.
 - Retention: 30 days of raw history (Timescale retention policy), then aggregates only.
-- Right to erasure: `DELETE /api/me/history` removes that user's rows (hypertable DELETE by user_id) and produces a tombstone to the compacted `user-last-location` topic.
+- Right to erasure: `DELETE /api/locations/history` removes that user's rows (hypertable DELETE by user_id) and produces a tombstone to the compacted `user-last-location` topic.

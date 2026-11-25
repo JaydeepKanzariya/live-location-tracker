@@ -25,7 +25,7 @@ A student assignment graded on a rubric, and the owner must **explain every part
 
 ## 3. The stack (decided; see `docs/plan/02-tech-stack.md`)
 
-TypeScript (strict) on Node 22 · pnpm workspaces + Turborepo · Fastify 5 + Socket.IO 4 · Apache Kafka 4 (KRaft) via `@confluentinc/kafka-javascript` · Zod event contracts in `packages/contracts` · OIDC code + PKCE, BFF pattern, `openid-client`, Keycloak locally · Redis (sessions, presence, rate limits, dedupe) · PostgreSQL 17 + PostGIS + TimescaleDB with Drizzle · React 19 + Vite, react-leaflet, Zustand, TanStack Query, Tailwind + shadcn/ui, Motion · OpenTelemetry + Prometheus + Grafana + Loki · Vitest, Testcontainers, Playwright, Artillery.
+TypeScript (strict) on Node 22 · npm workspaces + Turborepo (changed from pnpm; see ADR-02) · Fastify 5 + Socket.IO 4 · Apache Kafka 4 (KRaft) via `@confluentinc/kafka-javascript` · Zod event contracts in `packages/contracts` · OIDC code + PKCE, BFF pattern, `openid-client`, Keycloak locally · Redis (sessions, presence, rate limits, dedupe) · PostgreSQL 17 + PostGIS + TimescaleDB with Drizzle · React 19 + Vite, react-leaflet, Zustand, TanStack Query, Tailwind + shadcn/ui, Motion · OpenTelemetry + Prometheus + Grafana + Loki · Vitest, Testcontainers, Playwright, Artillery.
 
 **Verify before installing:** check the current stable version of every package and that its API still matches the plan. If something in the plan is outdated or won't install on Windows (especially the native Kafka client), **stop and tell the owner** and propose a fallback. The plan names KafkaJS behind an `EventBus` interface as the fallback.
 
@@ -52,7 +52,7 @@ TypeScript (strict) on Node 22 · pnpm workspaces + Turborepo · Fastify 5 + Soc
 At the end of each phase: run the checks listed, update `docs/STATUS.md`, and post a short report (what was built, what was verified and how, what is not done, any plan deviations). **Do not start the next phase until the owner says so.**
 
 **Phase 0: Foundations.** Monorepo skeleton (`apps/*`, `packages/*`), `packages/contracts|config|kafka|observability`, Docker Compose v2 (Kafka, Kafka UI, Keycloak with realm import, Redis, Timescale+PostGIS), CI (lint, typecheck, unit).
-*Check:* `pnpm install`, `pnpm infra:up`, `pnpm build`, `pnpm test` all pass from a clean clone; Kafka UI and Keycloak reachable.
+*Check:* `npm install`, `npm run v1:build`, `npm run v1:test` pass from a clean clone; `npm run v1:infra:up` + `npm run v1:infra:smoke` pass (also runs in CI). **Status: code done 2026-11-26 with review fixes; infra smoke test pending its first CI run.**
 
 **Phase 1: Auth and gateway.** Fastify BFF OIDC (PKCE, Redis sessions, logout), Socket.IO handshake auth with Origin check, Zod validation, Redis dedupe and token bucket, idempotent producer, broadcaster consumer.
 *Check:* integration tests (Testcontainers) for: unauthenticated socket rejected, spoofed `userId` ignored, duplicate `eventId` produces one Kafka record, rate limit, invalid payloads, session expiry. A real login through Keycloak works in a browser.

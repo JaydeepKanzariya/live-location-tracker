@@ -34,7 +34,7 @@ src/
 - **Smooth movement:** interpolate between positions with `requestAnimationFrame` over ~the send interval (dead reckoning with heading/speed is a COULD).
 - **Many users:** switch to `L.canvas()` circle markers above ~300 markers; **supercluster** for clustering when zoomed out.
 - **Me vs others:** "me" = pulsing ring + accuracy circle + always on top; others get a deterministic colour (golden-angle hue from `sub`), initials and a name label; stale (> 25 s) = dimmed to 40% with an "Idle" tag.
-- **Trails:** last 30 points per user as a polyline; own stored history as a dashed GeoJSON layer from `/api/me/history`.
+- **Trails:** last 30 points per user as a polyline; own stored history as a dashed GeoJSON layer from `/api/locations/history`.
 - **Tiles:** OSM for development; **MapTiler/Stadia** key in production (OSM's tile policy forbids heavy use).
 
 ## UX states (each one designed and tested)
@@ -159,14 +159,14 @@ This replaces the shorter `features/` layout in Part 1. The state model and rend
 
 ## Reconciliation with other plan documents
 
-These numbers and names differ between this part and other plan files. This part is the intended value; the other files need a matching edit when v1 is built.
+These values first differed between this part and other plan files. **Resolved 2026-11-26:** the other files now use the values below, and the timing numbers live in code as `DEFAULT_TIMINGS` in `@llt/contracts`.
 
-| Item | This part | Elsewhere |
+| Item | Agreed value | Status |
 |---|---|---|
-| Heartbeat when stationary | 15 s | [05](05-realtime-gateway.md) says 10 s |
-| Server stale threshold | client removes at 35 s | [01](01-requirements.md) and [07](07-data-storage.md) remove on the server at 30 s (the client rule is the backstop) |
-| History endpoint | `GET /api/locations/history?window=30m` | [07](07-data-storage.md) uses `GET /api/me/history?from&to&limit` |
-| Session endpoint | `/api/auth/me` | prototype uses `/api/me` |
+| Heartbeat when stationary | 15 s | ✅ [05](05-realtime-gateway.md) updated |
+| Stale thresholds | peers fade at 25 s, server removes at 30 s, client removes at 35 s (backstop) | ✅ consistent; in `DEFAULT_TIMINGS` and `.env.example` |
+| History endpoint | `GET /api/locations/history?window=30m` (also `from&to&limit`); `DELETE` for erasure | ✅ [06](06-auth-security.md) and [07](07-data-storage.md) updated |
+| Session endpoint | `/api/auth/me` in v1 | the v0 prototype keeps `/api/me`; no change needed |
 
 Note that a 15 s heartbeat against a 30 s server threshold tolerates only one missed heartbeat. If that proves flaky in testing, lower the heartbeat to 10 s rather than raising the threshold.
 

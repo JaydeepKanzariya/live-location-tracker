@@ -2,39 +2,46 @@
 
 ## Monorepo layout (v1)
 
+> Updated 2026-11-26 to match the repository after Phase 0. Items marked *(Phase N)* don't exist yet.
+
 ```
 live-location-tracker/
 ├── apps/
 │   ├── web/                 React + Vite + Leaflet
 │   ├── gateway/             Fastify + Socket.IO + producer + broadcaster consumer
-│   ├── history-writer/      Kafka → Timescale
+│   ├── history-writer/      Kafka → Timescale (consumer group `location-db-writer`)
 │   ├── presence-projector/  Kafka → Redis GEO, stale detection
 │   └── simulator/           synthetic riders → Kafka
 ├── packages/
-│   ├── contracts/           Zod event + socket schemas, TS types (single source of truth)
-│   ├── kafka/               EventBus wrapper (producer/consumer, tracing headers, DLQ helper)
-│   ├── config/              typed env loading (zod) shared by all apps
-│   ├── observability/       OTel + pino setup
-│   └── tsconfig/ eslint-config/
+│   ├── contracts/           Zod 4 event + socket schemas, TS types (single source of truth)
+│   ├── kafka/               EventBus (Confluent client, KafkaJS fallback, in-memory test bus), DLQ helper
+│   ├── config/              typed env loading (Zod) with production guards, shared by all apps
+│   ├── observability/       OTel trace headers + pino setup with redaction
+│   └── tsconfig/            shared TypeScript settings (ESLint config lives in root eslint.config.mjs)
 ├── infra/
-│   ├── compose/             docker-compose.yml (+ .observability.yml overlay)
-│   ├── keycloak/            realm export
-│   ├── grafana/             dashboards + datasources as code
-│   ├── caddy/               Caddyfile
+│   ├── compose/             docker-compose.yml + smoke-test.sh (observability overlay: Phase 4)
+│   ├── keycloak/            realm export (shared with the prototype)
+│   ├── grafana/             dashboards + datasources as code (Phase 4)
+│   ├── caddy/               Caddyfile (Phase 4)
 │   └── k8s/                 (COULD) Helm chart / Kustomize + Strimzi Kafka CR
 ├── docs/plan/               ← these documents
-├── legacy/ (or tag v0-prototype)   current JS prototype, kept for reference
-├── turbo.json  pnpm-workspace.yaml  .env.example  README.md
+├── src/ public/ test/ scripts/ docker-compose.yml
+│                            v0 JS prototype, kept at the root until v1 reaches parity,
+│                            then moved to legacy/ (owner approval required)
+├── turbo.json  package.json (npm workspaces)  tsconfig.base.json  eslint.config.mjs  .env.example
 ```
 
 ## Local development
 
 ```bash
-pnpm i
-pnpm infra:up      # kafka, kafka-ui, keycloak, redis, timescale (+ grafana stack with --profile obs)
-pnpm dev           # turbo runs web (5173), gateway (3000), history-writer, presence-projector
-pnpm simulate --riders 50
+npm install
+npm run v1:infra:up      # kafka, kafka-ui, keycloak, redis, timescale+postgis
+npm run v1:infra:smoke   # proves the stack: topics, Keycloak realm, Redis, Postgres extensions, Kafka UI
+npm run v1:dev           # turbo runs the apps (web 5173, gateway 3000, history-writer, presence-projector)
+npm run v1:test          # unit tests, no Docker needed
 ```
+
+The prototype's root `docker-compose.yml` uses the same ports; run one stack at a time.
 
 Vite proxies `/auth`, `/api` and `/socket.io` to the gateway, so the browser sees **one origin** (needed for cookie auth).
 
@@ -54,9 +61,15 @@ Vite proxies `/auth`, `/api` and `/socket.io` to the gateway, so the browser see
 
 ## CI/CD (GitHub Actions)
 
+**In place now** (`.github/workflows/ci.yml`, runs on push and PR to `main`):
+- `verify`: `npm ci` → lint → typecheck → build → v1 unit tests → prototype tests
+- `infra-smoke`: `docker compose up` on the GitHub runner → `smoke-test.sh` → logs on failure → `down -v`
+
+**Target** (added phase by phase):
+
 ```
 on PR:
-  install (pnpm cache) → lint (eslint) → typecheck (tsc -b) → unit (vitest)
+  install (npm cache) → lint (eslint) → typecheck (tsc -b) → unit (vitest)
   → integration (testcontainers: kafka, redis, timescale, keycloak)
   → e2e (playwright, compose stack, 2 browser contexts, mocked geolocation)
   → build images → trivy scan → gitleaks

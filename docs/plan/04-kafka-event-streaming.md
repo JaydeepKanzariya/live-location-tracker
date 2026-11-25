@@ -4,7 +4,7 @@
 
 | Topic | Key | Partitions (dev / prod) | Retention | Cleanup | Producers | Consumers |
 |---|---|---|---|---|---|---|
-| `location-updates` | `userId` | 3 / 24 | 24 h (prod 72 h) | delete | gateway, simulator | broadcaster-*, history-writer, presence-projector |
+| `location-updates` | `userId` | 3 / 24 | 24 h (prod 72 h) | delete | gateway, simulator | broadcaster-*, location-db-writer (history-writer app), presence-projector |
 | `presence-events` | `userId` | 3 / 12 | 24 h | delete | gateway (online/offline), presence-projector (stale) | broadcaster-* |
 | `user-last-location` | `userId` | 3 / 24 | ∞ | **compact** | presence-projector | gateway (warm start), future services |
 | `location-updates.dlq` | `userId` | 1 / 3 | 14 d | delete | any consumer | humans / replay tool |
@@ -25,11 +25,11 @@
                       ┌──────────── location-updates (P0 P1 P2) ────────────┐
 group broadcaster-gw-a ──► gw-a reads P0,P1,P2   (gets EVERYTHING)
 group broadcaster-gw-b ──► gw-b reads P0,P1,P2   (gets EVERYTHING)        ← pub/sub
-group history-writer   ──► hw-1 reads P0,P1 ; hw-2 reads P2  (SPLIT)      ← work queue
+group location-db-writer ► hw-1 reads P0,P1 ; hw-2 reads P2  (SPLIT)      ← work queue
 group presence-proj    ──► pp-1 reads P0,P1,P2
 ```
 
-- **Same group id → partitions are split** (load balancing). Used for history-writer and presence-projector.
+- **Same group id → partitions are split** (load balancing). Used for the history-writer app (group `location-db-writer`) and presence-projector.
 - **Different group ids → each group gets every message** (fan-out). Used for gateways, because each pod holds different sockets.
 - Each group keeps **its own committed offsets**, so a slow history-writer never slows the broadcaster.
 - Rebalancing uses the **cooperative-sticky** assignor (`partition.assignment.strategy=cooperative-sticky`): only the moved partitions pause, not the whole group.
@@ -50,16 +50,17 @@ group presence-proj    ──► pp-1 reads P0,P1,P2
 ## Event envelope (packages/contracts)
 
 ```ts
-// Zod schema, shared by every producer and consumer
-export const LocationUpdated = z.object({
+// Zod 4 schema in packages/contracts/src/events.ts (abridged), shared by every producer and consumer.
+// z.strictObject rejects unknown keys, so a spoofed `userId` from a client never passes.
+export const LocationUpdatedEventSchema = z.strictObject({
   schemaVersion: z.literal(1),
   type: z.literal('location.updated'),
-  eventId: z.string().uuid(),          // client-generated → idempotency key end-to-end
+  eventId: z.uuid(),                   // client-generated → idempotency key end-to-end
   occurredAt: z.number().int(),        // client clock (informational)
   receivedAt: z.number().int(),        // gateway clock (ordering, staleness)
   userId: z.string().min(1),           // OIDC sub, set by gateway from session
   displayName: z.string().max(80),
-  position: z.object({
+  position: z.strictObject({
     lat: z.number().min(-90).max(90),
     lng: z.number().min(-180).max(180),
     accuracyM: z.number().min(0).max(100_000).nullable(),

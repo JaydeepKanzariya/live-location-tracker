@@ -39,7 +39,7 @@ flowchart TB
   WEB <--> CADDY <--> GW
   GW -- produce key=userId --> K
   K -- group: broadcaster-&lt;pod&gt; --> GW
-  K -- group: history-writer --> HW --> DB
+  K -- group: location-db-writer --> HW --> DB
   K -- group: presence-projector --> PR --> R
   GW <--> R
   GW -- history API --> DB

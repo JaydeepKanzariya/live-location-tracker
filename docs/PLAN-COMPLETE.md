@@ -1,7 +1,7 @@
 # Live Location Tracker: Complete Engineering Plan
 
 > All 13 plan documents from `docs/plan/` combined into one file. The separate files are unchanged.
-> Status: Proposed · Date: 2026-11-25 · Submission deadline: 2026-12-31
+> Status: Approved, v1 in progress (see docs/STATUS.md) · Plan date: 2026-11-25 · Submission deadline: 2026-12-31
 
 ## Table of contents
 
@@ -25,13 +25,14 @@
 
 
 
+
 ---
 
 <a id="doc-00"></a>
 
 # Live Location Tracker: Engineering Plan
 
-> Status: **Proposed** · Date: 2026-11-25 · Submission deadline: 2026-12-31
+> Status: **Approved, v1 in progress (Phase 0 code done 2026-11-26; infra smoke test pending its first CI run)** · Plan date: 2026-11-25 · Submission deadline: 2026-12-31
 > The current JavaScript prototype in this repo stays as-is. It becomes the reference implementation (`v0-prototype`) while v1 is built next to it (see [12-roadmap.md](#doc-12)).
 
 ## 1. What we are building
@@ -56,7 +57,7 @@ A real-time location platform, the same shape as rider/customer tracking in Uber
 | Concern | Choice | Doc |
 |---|---|---|
 | Language | **TypeScript** end to end (Node.js 22 LTS) | [02](#doc-02) |
-| Repo | **pnpm workspaces + Turborepo** monorepo | [10](#doc-10) |
+| Repo | **npm workspaces + Turborepo** monorepo (changed from pnpm, see ADR-02) | [10](#doc-10) |
 | Frontend | **React 19 + Vite**, **Leaflet** (react-leaflet), TanStack Query, Zustand, Tailwind + shadcn/ui | [08](#doc-08) |
 | Realtime gateway | **Fastify + Socket.IO** | [05](#doc-05) |
 | Event streaming | **Apache Kafka 4 (KRaft)** · client **@confluentinc/kafka-javascript** | [04](#doc-04) |
@@ -182,8 +183,9 @@ Each decision below is written as a short ADR: **choice → why → rejected alt
 - **Rejected:** *Go* (better raw CPU/memory per connection, but you lose the shared types and Socket.IO's reference server is Node); *Elixir/Phoenix* (excellent for presence, but adds a second ecosystem and the rubric expects Socket.IO); plain JS (the current prototype; fine for a prototype, risky as it grows).
 - **Revisit when:** a single gateway pod needs > 100k connections and CPU profiles show JSON/socket overhead dominating. Then consider a Go gateway that speaks the Socket.IO protocol or uses raw WebSockets.
 
-## ADR-02 · Monorepo: pnpm workspaces + Turborepo
-- **Why:** apps (`web`, `gateway`, `history-writer`, `simulator`) and packages (`contracts`, `config`, `observability`) version together. Turborepo caches builds and tests, and pnpm is fast and strict about phantom dependencies.
+## ADR-02 · Monorepo: npm workspaces + Turborepo
+- **Decision changed 2026-11-25:** the plan first chose pnpm; v1 uses **npm workspaces** (npm 11) instead. Reasons: the owner asked for npm, the prototype already has an npm lockfile, and native add-ons such as the Confluent Kafka client install more predictably with npm on Windows. pnpm's stricter dependency isolation is the trade-off we give up.
+- **Why a monorepo:** apps (`web`, `gateway`, `history-writer`, `presence-projector`, `simulator`) and packages (`contracts`, `config`, `kafka`, `observability`) version together. Turborepo caches builds and tests.
 - **Rejected:** Nx (more powerful but heavier than this project needs); polyrepo (contract changes would need coordinated releases).
 
 ## ADR-03 · Frontend: React 19 + Vite SPA, Leaflet via react-leaflet
@@ -204,7 +206,7 @@ Each decision below is written as a short ADR: **choice → why → rejected alt
 - **Rejected:** KafkaJS (the prototype uses it; pure JS and easy to start with, but no release since 2023 and effectively unmaintained); node-rdkafka (older API, superseded by the Confluent client).
 - **Risk:** native binary. Prebuilt binaries exist for Linux, macOS and Windows x64. If one fails on a dev machine, KafkaJS stays as a fallback behind a small `EventBus` interface.
 
-## ADR-07 · Event contracts: Zod schemas + versioned JSON envelope
+## ADR-07 · Event contracts: Zod 4 schemas + versioned JSON envelope
 - **Why:** human-readable in Kafka UI (good for the demo and for debugging), with one schema package shared by every producer and consumer, runtime validation at every boundary, and generated TS types. The envelope carries `schemaVersion`, `type`, `eventId`, `occurredAt` and `traceparent`.
 - **Rejected for now:** Protobuf/Avro + Schema Registry (smaller payloads and enforced compatibility rules; the right call at ~33k events/s across many teams, but too much ceremony for one team and one deadline). The envelope is designed so we can switch encodings without changing topic semantics.
 
@@ -231,7 +233,7 @@ Each decision below is written as a short ADR: **choice → why → rejected alt
 - See [11-testing-strategy.md](#doc-11). Playwright can **grant geolocation permission and set coordinates**, so the full permission-to-marker flow can be tested end to end in CI.
 
 ## ADR-13 · Runtime & deployment
-- **Local:** Docker Compose (Kafka, Kafka UI, Keycloak, Redis, Timescale, Grafana stack).
+- **Local:** Docker Compose (Kafka 4.1, Kafka UI from the maintained Kafbat fork pinned to v1.4.2, Keycloak, Redis, TimescaleDB + PostGIS; Grafana stack in Phase 4). The original `provectuslabs/kafka-ui` project is archived.
 - **Demo/production (pragmatic):** one VM (Hetzner, DigitalOcean or AWS Lightsail) running Compose behind **Caddy** with automatic HTTPS. This is the cheapest way to host Kafka plus everything else under a real URL.
 - **Production (target design):** Kubernetes with **Strimzi** for Kafka (or Confluent Cloud/MSK), HPA on gateway connections, PodDisruptionBudgets. Documented and templated; not required for submission.
 - **CI/CD:** GitHub Actions → GHCR images → deploy over SSH (VM) or Argo CD (Kubernetes).
@@ -299,7 +301,7 @@ flowchart TB
   WEB <--> CADDY <--> GW
   GW -- produce key=userId --> K
   K -- group: broadcaster-&lt;pod&gt; --> GW
-  K -- group: history-writer --> HW --> DB
+  K -- group: location-db-writer --> HW --> DB
   K -- group: presence-projector --> PR --> R
   GW <--> R
   GW -- history API --> DB
@@ -381,7 +383,7 @@ sequenceDiagram
 
 | Topic | Key | Partitions (dev / prod) | Retention | Cleanup | Producers | Consumers |
 |---|---|---|---|---|---|---|
-| `location-updates` | `userId` | 3 / 24 | 24 h (prod 72 h) | delete | gateway, simulator | broadcaster-*, history-writer, presence-projector |
+| `location-updates` | `userId` | 3 / 24 | 24 h (prod 72 h) | delete | gateway, simulator | broadcaster-*, location-db-writer (history-writer app), presence-projector |
 | `presence-events` | `userId` | 3 / 12 | 24 h | delete | gateway (online/offline), presence-projector (stale) | broadcaster-* |
 | `user-last-location` | `userId` | 3 / 24 | ∞ | **compact** | presence-projector | gateway (warm start), future services |
 | `location-updates.dlq` | `userId` | 1 / 3 | 14 d | delete | any consumer | humans / replay tool |
@@ -402,11 +404,11 @@ sequenceDiagram
                       ┌──────────── location-updates (P0 P1 P2) ────────────┐
 group broadcaster-gw-a ──► gw-a reads P0,P1,P2   (gets EVERYTHING)
 group broadcaster-gw-b ──► gw-b reads P0,P1,P2   (gets EVERYTHING)        ← pub/sub
-group history-writer   ──► hw-1 reads P0,P1 ; hw-2 reads P2  (SPLIT)      ← work queue
+group location-db-writer ► hw-1 reads P0,P1 ; hw-2 reads P2  (SPLIT)      ← work queue
 group presence-proj    ──► pp-1 reads P0,P1,P2
 ```
 
-- **Same group id → partitions are split** (load balancing). Used for history-writer and presence-projector.
+- **Same group id → partitions are split** (load balancing). Used for the history-writer app (group `location-db-writer`) and presence-projector.
 - **Different group ids → each group gets every message** (fan-out). Used for gateways, because each pod holds different sockets.
 - Each group keeps **its own committed offsets**, so a slow history-writer never slows the broadcaster.
 - Rebalancing uses the **cooperative-sticky** assignor (`partition.assignment.strategy=cooperative-sticky`): only the moved partitions pause, not the whole group.
@@ -427,16 +429,17 @@ group presence-proj    ──► pp-1 reads P0,P1,P2
 ## Event envelope (packages/contracts)
 
 ```ts
-// Zod schema, shared by every producer and consumer
-export const LocationUpdated = z.object({
+// Zod 4 schema in packages/contracts/src/events.ts (abridged), shared by every producer and consumer.
+// z.strictObject rejects unknown keys, so a spoofed `userId` from a client never passes.
+export const LocationUpdatedEventSchema = z.strictObject({
   schemaVersion: z.literal(1),
   type: z.literal('location.updated'),
-  eventId: z.string().uuid(),          // client-generated → idempotency key end-to-end
+  eventId: z.uuid(),                   // client-generated → idempotency key end-to-end
   occurredAt: z.number().int(),        // client clock (informational)
   receivedAt: z.number().int(),        // gateway clock (ordering, staleness)
   userId: z.string().min(1),           // OIDC sub, set by gateway from session
   displayName: z.string().max(80),
-  position: z.object({
+  position: z.strictObject({
     lat: z.number().min(-90).max(90),
     lng: z.number().min(-180).max(180),
     accuracyM: z.number().min(0).max(100_000).nullable(),
@@ -540,7 +543,7 @@ Then each viewer gets only nearby users: about 1.7 M msgs/s at 100k users instea
 ## Client send strategy
 
 - `watchPosition` keeps only the latest fix; a timer sends at **3 s** (user-adjustable 2/5/10 s).
-- Send only if moved ≥ 2 m **or** ≥ 10 s passed (heartbeat). Stale threshold is 30 s, giving ~3 missed heartbeats of tolerance.
+- Send only if moved ≥ 2 m **or** ≥ 15 s passed (heartbeat). Server stale threshold is 30 s, so one missed heartbeat is tolerated; peers fade at 25 s and are removed client-side at 35 s (values in `@llt/contracts` `DEFAULT_TIMINGS`). If this proves flaky, lower the heartbeat to 10 s rather than raising the threshold.
 - **Adaptive (SHOULD):** use `speed` to choose the interval: 2 s when moving fast, 10 s when stationary. Saves battery and roughly halves traffic.
 - Retry on ack timeout (5 s) **with the same `eventId`** at most once; then drop the fix (a newer one will come).
 - While disconnected, don't queue old positions. On reconnect, send the newest one only.
@@ -608,14 +611,14 @@ sequenceDiagram
 - **Headers** via `@fastify/helmet`: HSTS, X-Content-Type-Options, Referrer-Policy, Permissions-Policy `geolocation=(self)`.
 - **CSRF:** SameSite=Lax + all state-changing HTTP is POST with an Origin check (logout is POST in v1).
 - **Secrets:** `.env` locally; in production Doppler / 1Password / cloud secret manager. Never committed. `gitleaks` runs in CI.
-- **Dependencies:** Renovate + `pnpm audit` + GitHub Dependabot alerts; container images scanned with Trivy.
+- **Dependencies:** Renovate + `npm audit` + GitHub Dependabot alerts; container images scanned with Trivy.
 - **Transport:** TLS at the edge (Caddy auto-HTTPS). Kafka/Redis/DB use SASL/TLS when outside a private network.
 
 ## Privacy (location data is sensitive personal data)
 - Explicit opt-in: sharing is **off** until the user clicks "Start sharing". A clear indicator shows while active.
 - Data minimisation: store downsampled history only; drop heading and speed from history if not needed.
 - Retention: 30 days of raw history (Timescale retention policy), then aggregates only.
-- Right to erasure: `DELETE /api/me/history` removes that user's rows (hypertable DELETE by user_id) and produces a tombstone to the compacted `user-last-location` topic.
+- Right to erasure: `DELETE /api/locations/history` removes that user's rows (hypertable DELETE by user_id) and produces a tombstone to the compacted `user-last-location` topic.
 
 
 ---
@@ -698,7 +701,7 @@ CREATE INDEX ON user_last_location USING GIST (geom);
 
 **Idempotency on a hypertable:** unique indexes must include the partition column, so the key is `(user_id, recorded_at, event_id)`. Because `recorded_at` comes from the event itself (gateway `receivedAt`), a replayed event has the identical key, so `ON CONFLICT DO NOTHING` works.
 
-## Write strategy (history-writer)
+## Write strategy (history-writer, consumer group `location-db-writer`)
 
 Why we never write to the DB on each socket event: 33k events/s inline would tie map latency to DB latency, give no buffer during outages, and store mostly redundant points.
 
@@ -715,9 +718,9 @@ Expected cost: about 13k rows/s at the design target, which is well within one t
 
 | Endpoint | Query | Notes |
 |---|---|---|
-| `GET /api/me/history?from&to&limit` | `WHERE user_id=$1 AND recorded_at BETWEEN …` | owner only; returns GeoJSON LineString |
+| `GET /api/locations/history?window=30m` (or `from&to&limit`) | `WHERE user_id=$1 AND recorded_at BETWEEN …` | owner only; returns GeoJSON LineString |
 | `GET /api/presence/near?lat&lng&radius` *(COULD)* | Redis `GEOSEARCH` | live, not from Postgres |
-| `DELETE /api/me/history` | delete by user_id | privacy / erasure |
+| `DELETE /api/locations/history` | delete by user_id | privacy / erasure |
 
 ## Backups & migrations
 - Migrations: Drizzle Kit generates SQL, which is reviewed in the PR and applied by a one-shot `migrate` job before deploy (never on app boot in production).
@@ -764,7 +767,7 @@ src/
 - **Smooth movement:** interpolate between positions with `requestAnimationFrame` over ~the send interval (dead reckoning with heading/speed is a COULD).
 - **Many users:** switch to `L.canvas()` circle markers above ~300 markers; **supercluster** for clustering when zoomed out.
 - **Me vs others:** "me" = pulsing ring + accuracy circle + always on top; others get a deterministic colour (golden-angle hue from `sub`), initials and a name label; stale (> 25 s) = dimmed to 40% with an "Idle" tag.
-- **Trails:** last 30 points per user as a polyline; own stored history as a dashed GeoJSON layer from `/api/me/history`.
+- **Trails:** last 30 points per user as a polyline; own stored history as a dashed GeoJSON layer from `/api/locations/history`.
 - **Tiles:** OSM for development; **MapTiler/Stadia** key in production (OSM's tile policy forbids heavy use).
 
 ## UX states (each one designed and tested)
@@ -889,14 +892,14 @@ This replaces the shorter `features/` layout in Part 1. The state model and rend
 
 ## Reconciliation with other plan documents
 
-These numbers and names differ between this part and other plan files. This part is the intended value; the other files need a matching edit when v1 is built.
+These values first differed between this part and other plan files. **Resolved 2026-11-26:** the other files now use the values below, and the timing numbers live in code as `DEFAULT_TIMINGS` in `@llt/contracts`.
 
-| Item | This part | Elsewhere |
+| Item | Agreed value | Status |
 |---|---|---|
-| Heartbeat when stationary | 15 s | [05](#doc-05) says 10 s |
-| Server stale threshold | client removes at 35 s | [01](#doc-01) and [07](#doc-07) remove on the server at 30 s (the client rule is the backstop) |
-| History endpoint | `GET /api/locations/history?window=30m` | [07](#doc-07) uses `GET /api/me/history?from&to&limit` |
-| Session endpoint | `/api/auth/me` | prototype uses `/api/me` |
+| Heartbeat when stationary | 15 s | ✅ [05](#doc-05) updated |
+| Stale thresholds | peers fade at 25 s, server removes at 30 s, client removes at 35 s (backstop) | ✅ consistent; in `DEFAULT_TIMINGS` and `.env.example` |
+| History endpoint | `GET /api/locations/history?window=30m` (also `from&to&limit`); `DELETE` for erasure | ✅ [06](#doc-06) and [07](#doc-07) updated |
+| Session endpoint | `/api/auth/me` in v1 | the v0 prototype keeps `/api/me`; no change needed |
 
 Note that a 15 s heartbeat against a 30 s server threshold tolerates only one missed heartbeat. If that proves flaky in testing, lower the heartbeat to 10 s rather than raising the threshold.
 
@@ -1221,39 +1224,46 @@ Batch consumers use **span links** (one batch span links to N producer spans). S
 
 ## Monorepo layout (v1)
 
+> Updated 2026-11-26 to match the repository after Phase 0. Items marked *(Phase N)* don't exist yet.
+
 ```
 live-location-tracker/
 ├── apps/
 │   ├── web/                 React + Vite + Leaflet
 │   ├── gateway/             Fastify + Socket.IO + producer + broadcaster consumer
-│   ├── history-writer/      Kafka → Timescale
+│   ├── history-writer/      Kafka → Timescale (consumer group `location-db-writer`)
 │   ├── presence-projector/  Kafka → Redis GEO, stale detection
 │   └── simulator/           synthetic riders → Kafka
 ├── packages/
-│   ├── contracts/           Zod event + socket schemas, TS types (single source of truth)
-│   ├── kafka/               EventBus wrapper (producer/consumer, tracing headers, DLQ helper)
-│   ├── config/              typed env loading (zod) shared by all apps
-│   ├── observability/       OTel + pino setup
-│   └── tsconfig/ eslint-config/
+│   ├── contracts/           Zod 4 event + socket schemas, TS types (single source of truth)
+│   ├── kafka/               EventBus (Confluent client, KafkaJS fallback, in-memory test bus), DLQ helper
+│   ├── config/              typed env loading (Zod) with production guards, shared by all apps
+│   ├── observability/       OTel trace headers + pino setup with redaction
+│   └── tsconfig/            shared TypeScript settings (ESLint config lives in root eslint.config.mjs)
 ├── infra/
-│   ├── compose/             docker-compose.yml (+ .observability.yml overlay)
-│   ├── keycloak/            realm export
-│   ├── grafana/             dashboards + datasources as code
-│   ├── caddy/               Caddyfile
+│   ├── compose/             docker-compose.yml + smoke-test.sh (observability overlay: Phase 4)
+│   ├── keycloak/            realm export (shared with the prototype)
+│   ├── grafana/             dashboards + datasources as code (Phase 4)
+│   ├── caddy/               Caddyfile (Phase 4)
 │   └── k8s/                 (COULD) Helm chart / Kustomize + Strimzi Kafka CR
 ├── docs/plan/               ← these documents
-├── legacy/ (or tag v0-prototype)   current JS prototype, kept for reference
-├── turbo.json  pnpm-workspace.yaml  .env.example  README.md
+├── src/ public/ test/ scripts/ docker-compose.yml
+│                            v0 JS prototype, kept at the root until v1 reaches parity,
+│                            then moved to legacy/ (owner approval required)
+├── turbo.json  package.json (npm workspaces)  tsconfig.base.json  eslint.config.mjs  .env.example
 ```
 
 ## Local development
 
 ```bash
-pnpm i
-pnpm infra:up      # kafka, kafka-ui, keycloak, redis, timescale (+ grafana stack with --profile obs)
-pnpm dev           # turbo runs web (5173), gateway (3000), history-writer, presence-projector
-pnpm simulate --riders 50
+npm install
+npm run v1:infra:up      # kafka, kafka-ui, keycloak, redis, timescale+postgis
+npm run v1:infra:smoke   # proves the stack: topics, Keycloak realm, Redis, Postgres extensions, Kafka UI
+npm run v1:dev           # turbo runs the apps (web 5173, gateway 3000, history-writer, presence-projector)
+npm run v1:test          # unit tests, no Docker needed
 ```
+
+The prototype's root `docker-compose.yml` uses the same ports; run one stack at a time.
 
 Vite proxies `/auth`, `/api` and `/socket.io` to the gateway, so the browser sees **one origin** (needed for cookie auth).
 
@@ -1273,9 +1283,15 @@ Vite proxies `/auth`, `/api` and `/socket.io` to the gateway, so the browser see
 
 ## CI/CD (GitHub Actions)
 
+**In place now** (`.github/workflows/ci.yml`, runs on push and PR to `main`):
+- `verify`: `npm ci` → lint → typecheck → build → v1 unit tests → prototype tests
+- `infra-smoke`: `docker compose up` on the GitHub runner → `smoke-test.sh` → logs on failure → `down -v`
+
+**Target** (added phase by phase):
+
 ```
 on PR:
-  install (pnpm cache) → lint (eslint) → typecheck (tsc -b) → unit (vitest)
+  install (npm cache) → lint (eslint) → typecheck (tsc -b) → unit (vitest)
   → integration (testcontainers: kafka, redis, timescale, keycloak)
   → e2e (playwright, compose stack, 2 browser contexts, mocked geolocation)
   → build images → trivy scan → gitleaks
@@ -1346,7 +1362,7 @@ The current JS prototype **stays untouched and working** the whole time. It is t
 
 | Week | Dates | Goal | Deliverables | Exit criteria |
 |---|---|---|---|---|
-| **0** | Nov 25–27 | Foundations | pnpm + Turborepo skeleton, `packages/contracts|config|kafka|observability`, Compose v2 (Kafka 4, Redis, Timescale+PostGIS, Keycloak), CI (lint/typecheck/unit) | `pnpm dev` boots empty apps; CI green |
+| **0** ✅ code done 2026-11-26 (infra smoke test: first CI run pending) | Nov 25–27 | Foundations | npm workspaces + Turborepo skeleton, `packages/contracts|config|kafka|observability`, Compose v2 (Kafka 4, Redis, Timescale+PostGIS, Keycloak), CI (lint/typecheck/unit) | build, typecheck, lint, unit tests pass; CI green including the infrastructure smoke test |
 | **1** | Nov 28–Dec 4 | Auth + gateway | Fastify BFF OIDC (PKCE, Redis sessions, `__Host-` cookie, logout), Socket.IO auth + Origin check, Zod validation, Redis dedupe + token bucket, idempotent producer, broadcaster consumer | Integration tests 1, 2, 5, 6, 9 pass; alice and bob see each other with the vanilla prototype UI pointed at the new gateway |
 | **2** | Dec 5–11 | Pipelines | history-writer (batch, downsample, Timescale, pause/resume, DLQ), presence-projector (Redis GEO, stale events), `presence-events` topic, history API | Tests 3, 4, 7, 8, 10 pass; Kafka UI shows 3+ groups with lag ≈ 0 |
 | **3** | Dec 12–18 | Frontend v1 | React + Vite + react-leaflet, Zustand presence, imperative marker layer, all UX states, history layer, diagnostics panel | Playwright two-user E2E green; **parity with the prototype → tag `v0-prototype`** |
@@ -1370,7 +1386,7 @@ The current JS prototype **stays untouched and working** the whole time. It is t
 2. **Login (1 min):** alice in a normal window, bob in incognito, through the Keycloak screen; show the HttpOnly cookie and that no token is in JS.
 3. **Permission (0.5 min):** prompt → allow; show the denied state + simulate fallback.
 4. **Live movement (1.5 min):** both sharing; markers glide; diagnostics show partition/offset per update.
-5. **Kafka (2 min):** Kafka UI → `location-updates` messages keyed by userId → consumer groups `broadcaster-*`, `history-writer`, `presence-projector`; explain split vs fan-out.
+5. **Kafka (2 min):** Kafka UI → `location-updates` messages keyed by userId → consumer groups `broadcaster-*`, `location-db-writer`, `presence-projector`; explain split vs fan-out.
 6. **Resilience (1.5 min):** stop history-writer → map still live, lag grows → restart → lag drains; send a duplicate → ignored; close bob's tab → marker removed.
 7. **Persistence (1 min):** history layer from Timescale; explain downsampling + batching numbers.
 8. **Trade-offs (1 min):** why Kafka, why not direct DB writes, how it scales (viewport fan-out).

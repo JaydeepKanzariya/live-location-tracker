@@ -64,7 +64,7 @@ Then each viewer gets only nearby users: about 1.7 M msgs/s at 100k users instea
 ## Client send strategy
 
 - `watchPosition` keeps only the latest fix; a timer sends at **3 s** (user-adjustable 2/5/10 s).
-- Send only if moved ≥ 2 m **or** ≥ 10 s passed (heartbeat). Stale threshold is 30 s, giving ~3 missed heartbeats of tolerance.
+- Send only if moved ≥ 2 m **or** ≥ 15 s passed (heartbeat). Server stale threshold is 30 s, so one missed heartbeat is tolerated; peers fade at 25 s and are removed client-side at 35 s (values in `@llt/contracts` `DEFAULT_TIMINGS`). If this proves flaky, lower the heartbeat to 10 s rather than raising the threshold.
 - **Adaptive (SHOULD):** use `speed` to choose the interval: 2 s when moving fast, 10 s when stationary. Saves battery and roughly halves traffic.
 - Retry on ack timeout (5 s) **with the same `eventId`** at most once; then drop the fix (a newer one will come).
 - While disconnected, don't queue old positions. On reconnect, send the newest one only.

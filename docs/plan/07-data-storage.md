@@ -74,7 +74,7 @@ CREATE INDEX ON user_last_location USING GIST (geom);
 
 **Idempotency on a hypertable:** unique indexes must include the partition column, so the key is `(user_id, recorded_at, event_id)`. Because `recorded_at` comes from the event itself (gateway `receivedAt`), a replayed event has the identical key, so `ON CONFLICT DO NOTHING` works.
 
-## Write strategy (history-writer)
+## Write strategy (history-writer, consumer group `location-db-writer`)
 
 Why we never write to the DB on each socket event: 33k events/s inline would tie map latency to DB latency, give no buffer during outages, and store mostly redundant points.
 
@@ -91,9 +91,9 @@ Expected cost: about 13k rows/s at the design target, which is well within one t
 
 | Endpoint | Query | Notes |
 |---|---|---|
-| `GET /api/me/history?from&to&limit` | `WHERE user_id=$1 AND recorded_at BETWEEN …` | owner only; returns GeoJSON LineString |
+| `GET /api/locations/history?window=30m` (or `from&to&limit`) | `WHERE user_id=$1 AND recorded_at BETWEEN …` | owner only; returns GeoJSON LineString |
 | `GET /api/presence/near?lat&lng&radius` *(COULD)* | Redis `GEOSEARCH` | live, not from Postgres |
-| `DELETE /api/me/history` | delete by user_id | privacy / erasure |
+| `DELETE /api/locations/history` | delete by user_id | privacy / erasure |
 
 ## Backups & migrations
 - Migrations: Drizzle Kit generates SQL, which is reviewed in the PR and applied by a one-shot `migrate` job before deploy (never on app boot in production).

@@ -1,6 +1,6 @@
 # Live Location Tracker: Engineering Plan
 
-> Status: **Proposed** · Date: 2026-11-25 · Submission deadline: 2026-12-31
+> Status: **Approved, v1 in progress (Phase 0 code done 2026-11-26; infra smoke test pending its first CI run)** · Plan date: 2026-11-25 · Submission deadline: 2026-12-31
 > The current JavaScript prototype in this repo stays as-is. It becomes the reference implementation (`v0-prototype`) while v1 is built next to it (see [12-roadmap.md](12-roadmap.md)).
 
 ## 1. What we are building
@@ -25,7 +25,7 @@ A real-time location platform, the same shape as rider/customer tracking in Uber
 | Concern | Choice | Doc |
 |---|---|---|
 | Language | **TypeScript** end to end (Node.js 22 LTS) | [02](02-tech-stack.md) |
-| Repo | **pnpm workspaces + Turborepo** monorepo | [10](10-infrastructure-devops.md) |
+| Repo | **npm workspaces + Turborepo** monorepo (changed from pnpm, see ADR-02) | [10](10-infrastructure-devops.md) |
 | Frontend | **React 19 + Vite**, **Leaflet** (react-leaflet), TanStack Query, Zustand, Tailwind + shadcn/ui | [08](08-frontend.md) |
 | Realtime gateway | **Fastify + Socket.IO** | [05](05-realtime-gateway.md) |
 | Event streaming | **Apache Kafka 4 (KRaft)** · client **@confluentinc/kafka-javascript** | [04](04-kafka-event-streaming.md) |
