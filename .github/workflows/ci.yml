@@ -38,6 +38,48 @@ jobs:
       - name: Prototype tests (safety net)
         run: npm test
 
+  gateway-integration:
+    # Phase 1 exit checks. Part 1 uses Testcontainers (a throwaway Redis). Part 2 starts the
+    # Compose stack and runs the full-stack tests: real Keycloak login and real Kafka.
+    name: Gateway integration tests (Testcontainers + Compose)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npm run v1:build
+
+      - name: Integration tests (Testcontainers)
+        run: npm run test:integration -w @llt/gateway
+
+      - name: Start infrastructure
+        run: docker compose -f infra/compose/docker-compose.yml up -d
+
+      - name: Wait for infrastructure
+        run: bash infra/compose/smoke-test.sh
+
+      - name: Full-stack tests (real Keycloak + Kafka)
+        run: npm run test:stack -w @llt/gateway
+
+      - name: Show logs on failure
+        if: failure()
+        run: docker compose -f infra/compose/docker-compose.yml logs --tail=100
+
+      - name: Stop infrastructure
+        if: always()
+        run: docker compose -f infra/compose/docker-compose.yml down -v
+
   infra-smoke:
     # GitHub runners have Docker, so this proves the Compose stack even where a dev
     # machine has no Docker. Checks Kafka topics, Keycloak realm, Redis, Postgres extensions, Kafka UI.
