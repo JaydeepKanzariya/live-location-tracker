@@ -23,7 +23,8 @@ wait_for() {
 
 kafka_topics_ready() {
   local topics
-  topics=$("${COMPOSE[@]}" exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list)
+  # MSYS_NO_PATHCONV stops Git Bash on Windows rewriting the container path below into a Windows path.
+  topics=$(MSYS_NO_PATHCONV=1 "${COMPOSE[@]}" exec -T kafka /opt/kafka/bin/kafka-topics.sh --bootstrap-server localhost:9092 --list)
   for t in location-updates presence-events user-last-location location-updates.dlq; do
     grep -qx "$t" <<<"$topics" || return 1
   done
