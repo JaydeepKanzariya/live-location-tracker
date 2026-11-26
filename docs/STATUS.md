@@ -2,7 +2,13 @@
 
 ## Current Phase
 **Phase 0 (Foundations): DONE 2026-11-26.** Reviewed, review fixes applied, CI green on GitHub (run 45692142195, commit `6787cb6`): lint, typecheck, build, unit tests, prototype tests, and the infrastructure smoke test.
-**Phase 1 (Auth + gateway): STARTED 2026-11-26** on branch `phase-1/auth-gateway`, tracked in a draft pull request into `main`. CI runs on every push to the PR. Merge only after the Phase 1 review.
+**Phase 1 (Auth + gateway): STARTED 2026-11-26** on branch `phase-1/auth-gateway`, tracked in a draft pull request into `main`. CI runs on every push to the PR. Merge only after the Phase 1 review. Docker now runs locally, so Phase 1 integration tests can run here as well as in CI.
+
+---
+
+## Local Docker Setup (2026-11-26)
+- Docker Desktop installed (Docker 29.9.3, Compose v5.7.1). Stack started with `docker compose -f infra/compose/docker-compose.yml up -d`; `npm run v1:infra:smoke` passed all five checks on this machine (Kafka 4 topics, Keycloak realm `tracker`, Redis PING, Postgres timescaledb + postgis, Kafka UI).
+- **Fix to `infra/compose/smoke-test.sh`:** on Windows (Git Bash) the Kafka topics check failed for 300 s even though the topics existed, because Git Bash rewrote the container path `/opt/kafka/bin/kafka-topics.sh` into a Windows path. The Kafka `docker exec` call now sets `MSYS_NO_PATHCONV=1`. It does nothing on Linux, so CI is unaffected. It is set on that one command only, because turning it off for the whole script breaks `curl -o /dev/null` in the Kafka UI check.
 
 ---
 
@@ -58,7 +64,7 @@ Also: Zod 4 `.merge()` replaced with `.extend(KafkaEnvSchema.shape)`; added `inf
 ---
 
 ## Not Done
-- **Phase 0 live infra check:** ✅ passed in GitHub Actions (run 45692142195). Docker is still not installed on the owner's machine, so local runs of the stack are not possible; CI covers it on every push.
+- **Phase 0 live infra check:** ✅ passed in GitHub Actions (run 45692142195) and, since 2026-11-26, locally on Windows 11 with Docker Desktop (all five smoke checks OK).
   - First CI run failed: a missing space in `kafka-init` created a topic named `location-updates--partitions` instead of `location-updates` (typo introduced during the review fixes). Fixed in `6787cb6`; the smoke test caught it as intended.
 - **Git repository:** done. Initialized on `main`, pushed to https://github.com/JaydeepKanzariya/live-location-tracker (commit `3516da0`). Repo-local git identity; hooks disabled for this repo only.
 - **Phases 1–5:** Auth + gateway (Phase 1), Pipelines (Phase 2), Frontend (Phase 3), Production-grade observability/deploy/load test (Phase 4), Final README + demo script (Phase 5).
@@ -66,7 +72,7 @@ Also: Zod 4 `.merge()` replaced with `.extend(KafkaEnvSchema.shape)`; added `inf
 ---
 
 ## Known Issues / Honest Flags
-1. **Docker not installed locally:** the Compose stack has not run on this machine. It is proven by the `infra-smoke` CI job (passing). Phase 1 integration tests (Testcontainers) will also need Docker: run them in CI, or install Docker Desktop.
+1. **Docker on this machine (resolved 2026-11-26):** the stack now runs locally and the smoke test passes, so Testcontainers tests and the real Keycloak login can run here as well as in CI. Windows notes: (a) Memurai (a Redis server for Windows) uses port 6379 and must stay stopped (`net stop memurai`; startup type is now Manual); (b) in Git Bash, set `MSYS_NO_PATHCONV=1` on any command that passes a container path (for example `/opt/kafka/bin/...`) to `docker exec`, or Git Bash turns it into a Windows path; (c) Docker keeps its images in a virtual disk under `AppData\Local\Docker\wsl\disk` on C: (about 7 GB so far).
 2. **npm 11 `allowScripts` warning:** During `npm install`, npm 11 warned that install scripts for `@confluentinc/kafka-javascript@1.11.0` and `esbuild` were not yet covered by `allowScripts`. While `import('@confluentinc/kafka-javascript')` succeeded in Node 24, we should verify connecting to a real Kafka broker once Docker is installed (and run `npm install-scripts approve @confluentinc/kafka-javascript` if native bindings complain, or switch `KAFKA_DRIVER=kafkajs`).
 3. **ESLint 9 deprecation notice:** npm warned that `eslint@9.x` has been superseded by ESLint 10; ESLint 9 is working cleanly with `typescript-eslint@8` right now.
 4. **Prototype tests:** all 14 pass locally, including `test/gateway.integration.test.js` (re-run during review on 2026-11-26).
