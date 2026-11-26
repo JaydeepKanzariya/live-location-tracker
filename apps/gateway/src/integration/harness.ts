@@ -1,6 +1,6 @@
 import { GatewayEnvSchema, loadConfig } from '@llt/config';
 import type { ClientToServerEvents, LocationUpdateAck, ServerToClientEvents } from '@llt/contracts';
-import { InMemoryEventBus, type ConsumedMessage } from '@llt/kafka';
+import { InMemoryEventBus, type ConsumedMessage, type EventBus } from '@llt/kafka';
 import { createLogger } from '@llt/observability';
 import { RedisContainer, type StartedRedisContainer } from '@testcontainers/redis';
 import { Redis } from 'ioredis';
@@ -59,20 +59,30 @@ export interface Pod {
 export class TestEnv {
   redisContainer!: StartedRedisContainer;
   redis!: Redis;
-  bus = new InMemoryEventBus(3);
-  /** Every record that reached the location-updates topic (a stand-in for "the Kafka topic"). */
+  readonly bus: EventBus;
+  private readonly oidc: OidcProvider;
+  /** Every record that reached the location-updates topic (in-memory bus unless a real one is given). */
   records: ConsumedMessage[] = [];
   pods: Pod[] = [];
   private sockets: ClientSocket[] = [];
   private extraRedis: Redis[] = [];
 
+  constructor(opts: { bus?: EventBus; oidc?: OidcProvider } = {}) {
+    this.bus = opts.bus ?? new InMemoryEventBus(3);
+    this.oidc = opts.oidc ?? new FakeOidc();
+  }
+
   async start(): Promise<void> {
     this.redisContainer = await new RedisContainer('redis:7-alpine').start();
     this.redis = new Redis(this.redisContainer.getConnectionUrl());
     await this.bus.connect();
-    await this.bus.subscribe({ groupId: 'test-recorder', topics: ['location-updates'] }, async (m) => {
-      this.records.push(m);
-    });
+    await this.bus.subscribe(
+      // A fresh group per run, so a real Kafka never replays an older run's offsets into this list.
+      { groupId: `test-recorder-${crypto.randomUUID()}`, topics: ['location-updates'] },
+      async (m) => {
+        this.records.push(m);
+      },
+    );
   }
 
   async addPod(
@@ -94,7 +104,7 @@ export class TestEnv {
       config,
       redis,
       bus: this.bus,
-      oidc: new FakeOidc(),
+      oidc: this.oidc,
       logger: createLogger({ service: `test:${instanceId}`, level: 'silent' }),
       sweepIntervalMs: options.sweepIntervalMs ?? 60_000,
       flushIntervalMs: options.flushIntervalMs ?? 50,
