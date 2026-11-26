@@ -2,7 +2,70 @@
 
 ## Current Phase
 **Phase 0 (Foundations): DONE 2026-11-26.** Reviewed, review fixes applied, CI green on GitHub (run 45692142195, commit `6787cb6`): lint, typecheck, build, unit tests, prototype tests, and the infrastructure smoke test.
-**Next: Phase 1 (Auth + gateway)**, waiting for the owner's go-ahead.
+**Phase 1 (Auth + gateway): BUILT 2026-11-26, READY FOR REVIEW** on branch `phase-1/auth-gateway` (pull request #1 into `main`). CI runs on every push to the PR. Merge only after the Phase 1 review. Docker now runs locally, so Phase 1 integration tests can run here as well as in CI.
+
+---
+
+## Phase 1: Auth + gateway (built 2026-11-26)
+
+### What was built (`apps/gateway`)
+- **OIDC BFF login (Keycloak):** `GET /auth/login` (PKCE S256, state, nonce), `GET /auth/callback`, `GET /auth/me`, `POST /auth/logout` (Origin-checked, returns the IdP end-session URL). The pending login is stored in Redis for one use, and bound to the browser by a short-lived state cookie (stops login CSRF). `returnTo` only accepts same-site paths.
+- **Sessions:** Redis, opaque 256-bit id in an HttpOnly, SameSite=Lax cookie (`__Host-sid` in production, `sid` on http dev). Redis keys use `HMAC(secret, id)`, so a Redis dump holds no usable cookies. 30 min sliding idle timeout, 8 h absolute limit. A new id is issued at login (no fixation). The refresh token is stored AES-256-GCM encrypted; tokens never reach the browser.
+- **Socket.IO:** handshake needs a live session and an allowed `Origin` (a missing Origin is refused). `userId` always comes from the session. Every event re-checks the session; a periodic sweep (uses `peek`, so it does not keep idle sessions alive) sends `auth:expired` and closes expired sockets. `maxHttpBufferSize` is 4 KB.
+- **`location:update` pipeline:** Zod strict parse, clock-skew check, Redis dedupe (`SET NX EX`), Redis Lua token bucket (1/s, burst 3, Redis server clock), enrich from session, idempotent produce, ack with partition and offset.
+- **Broadcaster:** consumer group `broadcaster-<INSTANCE_ID>` (every pod sees every event), keeps the newest entry per user, sends one `location:batch` to the `authenticated` room every 150 ms. Poison records go to the DLQ topic.
+- **Also:** `/healthz`, `/readyz` (Redis + Kafka, 503 while draining), helmet headers, `Permissions-Policy: geolocation=(self)`, graceful `stop()` (SIGTERM/SIGINT in `index.ts`).
+
+### Phase 1 exit checks and the test that proves each
+| Check from BUILD-PROMPT | Test |
+|---|---|
+| Unauthenticated socket rejected | `gateway.integration.test.ts` (no cookie, fake cookie, bad Origin, missing Origin) |
+| Spoofed `userId` ignored | `pipeline.test.ts`, `gateway.integration.test.ts`, and on real Kafka in `stack.integration.test.ts` |
+| Duplicate `eventId` gives one Kafka record | in-memory bus + 4-socket race with real Redis; on the **real Kafka topic** in `stack.integration.test.ts` |
+| Rate limit | `pipeline.test.ts`, `gateway.integration.test.ts` (5 sent, 3 accepted), `session-store.integration.test.ts` (atomic under 50 concurrent calls) |
+| Invalid payloads | table of 9 cases in `pipeline.test.ts`, 5 over a real socket, plus a 10 KB payload that closes the socket |
+| Session expiry | on event, on sweep, on handshake (idle timeout), 8 h absolute limit, logout closing sockets |
+| Real login through Keycloak | `stack.integration.test.ts`: headless login (PKCE), wrong password, logout also ends the Keycloak SSO session |
+
+### How to run and verify this phase
+```bash
+npm install
+npm run v1:build && npm run v1:typecheck && npm run v1:lint
+npm run v1:test                                   # unit tests (no Docker): 62 in the gateway
+npm run test:integration -w @llt/gateway          # Testcontainers: starts a throwaway Redis (needs Docker)
+npm run v1:infra:up && npm run v1:infra:smoke     # start and check Kafka, Keycloak, Redis, Postgres
+npm run test:stack -w @llt/gateway                # real Keycloak + real Kafka (needs the stack above)
+node apps/gateway/dist/index.js                   # run the gateway on :3000 (loads .env if present)
+```
+Manual browser check: with the stack and the gateway running, open `http://localhost:3000/auth/login`, sign in as `alice` / `alice`, then open `http://localhost:3000/auth/me`. It should show alice's id and name as JSON (there is no web page until Phase 3, so `/` itself is a 404 after login). `POST /auth/logout` needs an `Origin` header, so test it with the integration test, not the address bar.
+
+### Verified on 2026-11-26 (Windows 11, Node 24, Docker Desktop)
+- `v1:build` 9/9, `v1:typecheck` 13/13, `v1:lint` clean, `v1:test` all packages pass (gateway 62, contracts 18, config 11, kafka 12, observability 4), Prettier clean on `apps/gateway`.
+- `test:integration`: 42/42 (real Redis). `test:stack`: 6/6 (real Keycloak 26 and Kafka 4.1 with the **Confluent driver**; its logs show consumers joining and rebalancing).
+- The built gateway process was started against the local stack: `/healthz` 200, `/readyz` 200 with `redisOk` and `kafkaOk` true, `/auth/login` 302 to Keycloak, `/auth/me` 401 without a session.
+- CI: new job `gateway-integration` runs the integration and full-stack tests on every push. **It has not run on GitHub yet** (see below).
+
+### Files that matter most
+`src/location/pipeline.ts` (the update pipeline), `src/auth/routes.ts` and `src/auth/oidc.ts` (login), `src/session/session-store.ts`, `src/socket/socket-server.ts`, `src/broadcaster.ts`, `src/ratelimit/token-bucket.ts` (Lua), `src/app.ts` (wiring), `src/integration/*.test.ts`.
+
+### Decisions and flags (read before reviewing)
+1. **Dedupe key is released when an update is not produced.** The plan runs dedupe before the rate limit. Done literally, a rate-limited update stays "seen", so the client's retry with the same `eventId` would be acked as a duplicate and lost. The key is therefore released on `RATE_LIMITED` and on `UNAVAILABLE` (tests: `RETRY`, `UNAVAILABLE`). The plan doc does not say this yet.
+2. **Missing `Origin` is refused on the socket handshake.** Strict, as the plan says. The simulator and Artillery must send an `Origin` header.
+3. **Logout returns JSON `{ redirectTo }`**, not a 302, so a `fetch()` call from the web app can read it and navigate (a cross-origin redirect to Keycloak would fail CORS). Phase 3 must do the navigation.
+4. **Logout in a multi-pod setup:** `endSession` closes only the sockets on the pod that handled the logout. Other pods close theirs on the next sweep (5 s) because the session is gone from Redis. The Socket.IO Redis adapter for instant cross-pod close is not added (plan: Phase 4).
+5. **Not done, on purpose (scope or later phase):** `presence:snapshot` is an empty list until the presence-projector exists (Phase 2); `sharing:stop` and the 5 s disconnect grace timer with `presence.offline` (Phase 2); plausibility check on implied speed (plan 06; not in the Phase 1 brief); back-channel logout (SHOULD); H3 cell tagging (COULD).
+6. **In-memory Kafka bus in the Redis-only integration tests.** Counting "records on the topic" there uses `InMemoryEventBus`. The real-Kafka proof is `stack.integration.test.ts`; both run in CI.
+7. **Helmet defaults** add a CSP with `upgrade-insecure-requests` and HSTS. Fine for a JSON API; Phase 3 needs the plan's own CSP once the gateway serves or fronts the web app.
+8. **Fastify 5.12 deprecation warning** for `disableRequestLogging` (kept on purpose: `/auth/callback` URLs carry a one-time code). Replace with `logController` before Fastify 6.
+9. **Identity-provider test double:** the Redis-only tests use `FakeOidc` to exercise our own cookie/state/session code. All real-IdP behaviour is covered only by the stack test.
+10. **The real browser login has not been done by a person.** The stack test simulates a browser (cookie jar, form post). Please do the manual browser check above once.
+11. **`npm install -w @llt/gateway` crashes npm 11 internally** ("Cannot read properties of null (reading 'location')"); dependencies were added to `apps/gateway/package.json` by hand, then `npm install` at the root.
+
+---
+
+## Local Docker Setup (2026-11-26)
+- Docker Desktop installed (Docker 29.9.3, Compose v5.7.1). Stack started with `docker compose -f infra/compose/docker-compose.yml up -d`; `npm run v1:infra:smoke` passed all five checks on this machine (Kafka 4 topics, Keycloak realm `tracker`, Redis PING, Postgres timescaledb + postgis, Kafka UI).
+- **Fix to `infra/compose/smoke-test.sh`:** on Windows (Git Bash) the Kafka topics check failed for 300 s even though the topics existed, because Git Bash rewrote the container path `/opt/kafka/bin/kafka-topics.sh` into a Windows path. The Kafka `docker exec` call now sets `MSYS_NO_PATHCONV=1`. It does nothing on Linux, so CI is unaffected. It is set on that one command only, because turning it off for the whole script breaks `curl -o /dev/null` in the Kafka UI check.
 
 ---
 
@@ -58,7 +121,7 @@ Also: Zod 4 `.merge()` replaced with `.extend(KafkaEnvSchema.shape)`; added `inf
 ---
 
 ## Not Done
-- **Phase 0 live infra check:** ✅ passed in GitHub Actions (run 45692142195). Docker is still not installed on the owner's machine, so local runs of the stack are not possible; CI covers it on every push.
+- **Phase 0 live infra check:** ✅ passed in GitHub Actions (run 45692142195) and, since 2026-11-26, locally on Windows 11 with Docker Desktop (all five smoke checks OK).
   - First CI run failed: a missing space in `kafka-init` created a topic named `location-updates--partitions` instead of `location-updates` (typo introduced during the review fixes). Fixed in `6787cb6`; the smoke test caught it as intended.
 - **Git repository:** done. Initialized on `main`, pushed to https://github.com/JaydeepKanzariya/live-location-tracker (commit `3516da0`). Repo-local git identity; hooks disabled for this repo only.
 - **Phases 1–5:** Auth + gateway (Phase 1), Pipelines (Phase 2), Frontend (Phase 3), Production-grade observability/deploy/load test (Phase 4), Final README + demo script (Phase 5).
@@ -66,8 +129,8 @@ Also: Zod 4 `.merge()` replaced with `.extend(KafkaEnvSchema.shape)`; added `inf
 ---
 
 ## Known Issues / Honest Flags
-1. **Docker not installed locally:** the Compose stack has not run on this machine. It is proven by the `infra-smoke` CI job (passing). Phase 1 integration tests (Testcontainers) will also need Docker: run them in CI, or install Docker Desktop.
-2. **npm 11 `allowScripts` warning:** During `npm install`, npm 11 warned that install scripts for `@confluentinc/kafka-javascript@1.11.0` and `esbuild` were not yet covered by `allowScripts`. While `import('@confluentinc/kafka-javascript')` succeeded in Node 24, we should verify connecting to a real Kafka broker once Docker is installed (and run `npm install-scripts approve @confluentinc/kafka-javascript` if native bindings complain, or switch `KAFKA_DRIVER=kafkajs`).
+1. **Docker on this machine (resolved 2026-11-26):** the stack now runs locally and the smoke test passes, so Testcontainers tests and the real Keycloak login can run here as well as in CI. Windows notes: (a) Memurai (a Redis server for Windows) uses port 6379 and must stay stopped (`net stop memurai`; startup type is now Manual); (b) in Git Bash, set `MSYS_NO_PATHCONV=1` on any command that passes a container path (for example `/opt/kafka/bin/...`) to `docker exec`, or Git Bash turns it into a Windows path; (c) Docker keeps its images in a virtual disk under `AppData\Local\Docker\wsl\disk` on C: (about 7 GB so far).
+2. **npm 11 `allowScripts` warning (resolved for Kafka, 2026-11-26):** npm still warns that install scripts for `@confluentinc/kafka-javascript`, `esbuild` and others are not covered by `allowScripts`. The Confluent driver nevertheless connects to a real Kafka 4.1 broker on Windows (producer, consumers, rebalance), proven by `test:stack`. No need to switch to `kafkajs`.
 3. **ESLint 9 deprecation notice:** npm warned that `eslint@9.x` has been superseded by ESLint 10; ESLint 9 is working cleanly with `typescript-eslint@8` right now.
 4. **Prototype tests:** all 14 pass locally, including `test/gateway.integration.test.js` (re-run during review on 2026-11-26).
 5. **Vite env files:** Vite reads `.env` from `apps/web`, not the repo root, so `VITE_ENABLE_SIMULATOR` in the root `.env.example` is not seen yet. Set `envDir` in `apps/web/vite.config.ts` in Phase 3.
